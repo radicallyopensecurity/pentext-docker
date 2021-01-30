@@ -24,16 +24,15 @@ COPY --from=download-and-extract-tools /fop-${FOP_VERSION}/fop /fop
 COPY --from=download-and-extract-tools /Saxon-HE-${SAXON_VERSION}.jar /saxon.jar
 ENV PATH=/fop:${PATH}
 
-RUN apk add --no-cache python3 fontconfig ttf-dejavu
+RUN apk add --no-cache fontconfig ttf-dejavu
 
 
 # add dummy fontconfig.properties to fix NPE -- https://github.com/AdoptOpenJDK/openjdk-build/issues/693
 ADD configs/fontconfig.properties /usr/lib/jvm/java-1.8-openjdk/jre/lib/fontconfig.properties
 ADD configs/rosfop.xconf /fop/conf/rosfop.xconf
 ADD fonts/* /fop/fonts/
-ADD scripts/docbuilder /scripts/docbuilder
-ADD scripts/auto-build.sh /scripts/auto-build.sh
+ADD scripts/build-document.sh /scripts/build-document.sh
 
 
-ENTRYPOINT /scripts/auto-build.sh
+ENTRYPOINT /scripts/build-document.sh
 
