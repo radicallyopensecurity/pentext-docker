@@ -32,7 +32,8 @@ ADD configs/fontconfig.properties /usr/lib/jvm/java-1.8-openjdk/jre/lib/fontconf
 ADD configs/rosfop.xconf /fop/conf/rosfop.xconf
 ADD fonts/* /fop/fonts/
 ADD scripts/docbuilder /scripts/docbuilder
+ADD scripts/auto-build.sh /scripts/auto-build.sh
 
 
-ENTRYPOINT python3 /scripts/docbuilder -c
+ENTRYPOINT /scripts/auto-build.sh
 
