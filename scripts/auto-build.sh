@@ -4,5 +4,5 @@ if [ -f "source/report.xml" ]; then
 	/usr/bin/python3 /scripts/docbuilder -c --input "source/report.xml"
 elif [ -f "source/offerte.xml" ]; then
 	echo "Building Offerte"
-	/usr/bin/python3 /scripts/docbuilder -c --input "source/report.xml"
+	/usr/bin/python3 /scripts/docbuilder -c --input "source/offerte.xml"
 fi
