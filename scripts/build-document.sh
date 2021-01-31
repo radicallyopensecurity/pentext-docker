@@ -39,3 +39,5 @@ if [ -f "source/report.xml" ]; then
 elif [ -f "source/offerte.xml" ]; then
 	to_pdf offerte
 fi
+
+ls -al $TARGET_DIR
