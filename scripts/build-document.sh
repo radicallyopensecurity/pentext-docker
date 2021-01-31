@@ -7,11 +7,11 @@ mkdir -p $TARGET_DIR
 to_fo()
 {
 	DOC_TYPE="${1:-report}"
-	echo "Building ${TARGET_DIR}/${DOC_TYPE}.fo"
+	echo "Building ${TARGET_DIR}/${DOC_TYPE}_${CI_PROJECT_NAME}.fo"
 	java -jar /saxon.jar \
 		"-s:source/${DOC_TYPE}.xml" \
 		"-xsl:xslt/generate_${DOC_TYPE}.xsl" \
-		"-o:${TARGET_DIR}/${DOC_TYPE}.fo" \
+		"-o:${TARGET_DIR}/${DOC_TYPE}_${CI_PROJECT_NAME}.fo" \
 		-xi
 }
 
@@ -19,11 +19,11 @@ to_pdf()
 {
 	DOC_TYPE="${1:-report}"
 	to_fo "$DOC_TYPE"
-	echo "Building ${TARGET_DIR}/${DOC_TYPE}.pdf"
+	echo "Building ${TARGET_DIR}/${DOC_TYPE}_${CI_PROJECT_NAME}.pdf"
 	/fop/fop \
 		-c /fop/conf/rosfop.xconf \
-		"${TARGET_DIR}/${DOC_TYPE}.fo" \
-		"${TARGET_DIR}/${DOC_TYPE}.pdf" \
+		"${TARGET_DIR}/${DOC_TYPE}_${CI_PROJECT_NAME}.fo" \
+		"${TARGET_DIR}/${DOC_TYPE}_${CI_PROJECT_NAME}.pdf" \
 		-v \
 		-nocopy \
 		-noaccesscontent \
