@@ -215,6 +215,12 @@ class NonFinding(ReportAsset):
 		doc = xml.dom.minidom.Document()
 		root = doc.createElement("non-finding");
 		root.setAttribute("id", self.slug)
+		root.setAttribute("number", str(self.id))
+
+		title = doc.createElement("title");
+		title.appendChild(doc.createTextNode(self.title))
+		root.appendChild(title)
+
 		content_nodes = self._markdown_to_dom(self.description)
 		for node in content_nodes:
 			root.appendChild(node)
