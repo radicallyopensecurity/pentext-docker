@@ -8,7 +8,6 @@ import xml.dom.minidom
 import urllib.request
 
 from gitlab import Gitlab
-from markdown import markdown
 from slugify import slugify
 
 GITLAB_SERVER_URL = os.environ.get(
@@ -113,10 +112,14 @@ class ReportAsset:
 		)
 
 	@staticmethod
-	def _markdown_to_dom(markdown_text: str) -> typing.List[xml.dom.minidom.Element]:
-		# gitlab.markdown does not close single elements (e.g. <img/>) properly
-		# html = gitlab.markdown(markdown_text, gmf=True)
-		html = markdown(markdown_text)
+	def _markdown_to_dom(
+		markdown_text: str
+	) -> typing.List[xml.dom.minidom.Element]:
+		pattern = re.compile('(<img .*?[^\/])>')
+		html = pattern.sub(
+			r"\1/>",
+			gitlab.markdown(markdown_text, gmf=True)
+		)
 		dom = xml.dom.minidom.parseString(f"<root>{html}</root>")
 		return dom.firstChild.childNodes
 
