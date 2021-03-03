@@ -1,4 +1,8 @@
-FROM python:3.8-alpine
+FROM pandoc/core:latest
+#FROM python:3.8-alpine
+
+RUN apk add --update --no-cache python3 py3-pip
+RUN pip3 install pypandoc
 
 #RUN apk add --no-cache python3 libxml2-dev libxslt-dev cython
 #RUN apk add --no-cache build-base enchant2-dev libxml2-dev libxslt-dev cython

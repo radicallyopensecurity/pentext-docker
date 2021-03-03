@@ -7,6 +7,7 @@ import pathlib
 import xml.dom.minidom
 import urllib.request
 
+import pypandoc
 from gitlab import Gitlab
 from slugify import slugify
 
@@ -116,10 +117,11 @@ class ReportAsset:
 		markdown_text: str
 	) -> typing.List[xml.dom.minidom.Element]:
 		pattern = re.compile('(<img .*?[^\/])>')
-		html = pattern.sub(
-			r"\1/>",
-			gitlab.markdown(markdown_text, gmf=True)
-		)
+		html = pypandoc.convert_text(
+			markdown_text,
+			'html5',
+			format='markdown_github'
+		).replace('\r\n', '\n')
 		dom = xml.dom.minidom.parseString(f"<root>{html}</root>")
 		return dom.firstChild.childNodes
 
