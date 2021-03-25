@@ -11,6 +11,7 @@ import pypandoc
 from gitlab import Gitlab
 from slugify import slugify
 
+GITLAB_TOKEN=os.environ["PROJECT_ACCESS_TOKEN"]
 GITLAB_SERVER_URL = os.environ.get(
 	"CI_SERVER_URL",
 	"https://git.radicallyopensecurtity.com"
@@ -18,12 +19,12 @@ GITLAB_SERVER_URL = os.environ.get(
 
 gitlab = Gitlab(
   GITLAB_SERVER_URL,
-  private_token=os.environ["GITLAB_TOKEN"]
+  private_token=GITLAB_TOKEN
 )
 gitlab.auth()
 
 opener = urllib.request.build_opener()
-opener.addheaders = [('PRIVATE-TOKEN', os.environ["GITLAB_TOKEN"])]
+opener.addheaders = [('PRIVATE-TOKEN', GITLAB_TOKEN)]
 urllib.request.install_opener(opener)
 
 pathlib.Path("uploads").mkdir(parents=True, exist_ok=True)
