@@ -1,4 +1,4 @@
-ARG FOP_VERSION=2.5
+ARG FOP_VERSION=2.6
 ARG SAXON_VERSION=10.3
 
 FROM openjdk:alpine as download-and-extract-tools
@@ -26,13 +26,10 @@ ENV PATH=/fop:${PATH}
 
 RUN apk add --no-cache fontconfig ttf-dejavu
 
-
 # add dummy fontconfig.properties to fix NPE -- https://github.com/AdoptOpenJDK/openjdk-build/issues/693
 ADD configs/fontconfig.properties /usr/lib/jvm/java-1.8-openjdk/jre/lib/fontconfig.properties
 ADD configs/rosfop.xconf /fop/conf/rosfop.xconf
 ADD fonts/* /fop/fonts/
 ADD scripts/build-document.sh /scripts/build-document.sh
 
-
 ENTRYPOINT /scripts/build-document.sh
-
