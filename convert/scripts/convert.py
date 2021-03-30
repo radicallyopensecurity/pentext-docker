@@ -82,9 +82,11 @@ class ReportAsset:
 	def __init__(
 		self,
 		id: int,
+		iid: int,
 		title: str
 	):
 		self.id = id
+		self.iid = iid
 		self.title = title
 
 	@property
@@ -143,7 +145,7 @@ class ReportAsset:
 
 	@property
 	def slug(self):
-		return f"f{self.id}-{slugify(self.title)}"
+		return f"f{self.iid}-{slugify(self.title)}"
 
 
 class Finding(ReportAsset):
@@ -151,6 +153,7 @@ class Finding(ReportAsset):
 	def __init__(
 		self,
 		id: int,
+		iid: int,
 		title: str,
 		description: str="",
 		technicaldescription: str="",
@@ -160,7 +163,7 @@ class Finding(ReportAsset):
 		type: str="Unknown",
 		status: str="none"
 	):
-		super().__init__(id, title)
+		super().__init__(id, iid, title)
 		self.description = description
 		self.technicaldescription = technicaldescription
 		self.impact = impact
@@ -210,10 +213,11 @@ class NonFinding(ReportAsset):
 	def __init__(
 		self,
 		id: int,
+		iid: int,
 		title: str,
 		description: str=""
 	):
-		super().__init__(id, title)
+		super().__init__(id, iid, title)
 		self.description = description
 
 	@property
@@ -323,6 +327,7 @@ def readFindingFromIssue(issue):
 
 	return Finding(
 		id=issue.id,
+		iid=issue.iid,
 		title=issue.title,
 		description=issue.description,
 		technicaldescription=technicaldescription,
@@ -355,7 +360,12 @@ class ROSProject:
 	def non_findings(self):
 		if self._non_findings is None:
 			self._non_findings = list(map(
-				lambda issue: NonFinding(issue.id, issue.title, issue.description),
+				lambda issue: NonFinding(
+					id=issue.id,
+					iid=issue.iid,
+					title=issue.title,
+					description=issue.description
+				),
 				self.gitlab_project.issues.list(labels=["non-finding"])
 			))
 		return self._non_findings
