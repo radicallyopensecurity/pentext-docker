@@ -175,7 +175,7 @@ class Finding(ReportAsset):
 		threatlevel: str="Unknown",
 		type: str="Unknown",
 		status: str="none"
-	):
+	) -> None:
 		super().__init__(id, iid, title)
 		self.description = description
 		self.technicaldescription = technicaldescription
@@ -229,7 +229,7 @@ class NonFinding(ReportAsset):
 		iid: int,
 		title: str,
 		description: str=""
-	):
+	) -> None:
 		super().__init__(id, iid, title)
 		self.description = description
 
@@ -253,6 +253,60 @@ class NonFinding(ReportAsset):
 	@property
 	def relative_path(self):
 		return f"non-findings/{self.filename}"
+
+
+class Conclusion(ReportAsset):
+
+	def __init__(
+		self,
+		id: int,
+		iid: int,
+		text: str
+	) -> None:
+		super().__init__(id, iid, "Conclusion")
+		self.text = text
+		self._doc = None
+
+	@property
+	def filename(self):
+		return "conclusion.xml"
+
+	@property
+	def relative_path(self):
+		return f"source/{self.filename}"
+
+	@property
+	def doc(self):
+		if self._doc is None:
+			doc = xml.dom.minidom.parse(self.relative_path)
+			self._doc = self.replace_todo(doc)
+		return self._doc
+
+	def replace_todo(self, doc):
+		todos = doc.documentElement.getElementsByTagName("todo")
+		if len(todos) == 0:
+			# skip when no <todo> element was found in XML
+			return doc
+		if self.text == None:
+			# skip when no Conclusion was found in GitLab issues 
+			return doc
+
+		# replace todo with user text
+		todo = todos[0]
+		n = self._markdown_to_dom(todo.description)
+		todo.parentNode.replaceChild(n, todo)
+
+		return doc
+
+	def write(self, dest=None):
+		if self.text is None:
+			print("No conclusion issue found - skipping {self.relative_path}")
+			return
+		if dest is None:
+			dest = self.relative_path
+		with open(dest, "w", encoding="UTF-8") as file:
+			print(f"writing report to {dest}")
+			file.write(self.doc.toprettyxml(indent="\t"))
 
 
 class Report:
@@ -357,6 +411,7 @@ class ROSProject:
 		self.gitlab_project = gitlab.projects.get(project_id)
 		self._findings = None
 		self._non_findings = None
+		self._conclusion = None
 		self.report = Report()
 
 	@property
@@ -388,6 +443,16 @@ class ROSProject:
 			))
 		return self._non_findings
 
+	@property
+	def conclusion(self):
+		if self._conclusion is None:
+			issues = self.gitlab_project.issues.list(title="Conclusion")
+			if len(issues) > 1:
+				raise Error("Multiple conclusions found in GitLab issues.")
+			text = issues[0].description if (len(issues) == 1) else None
+			self._conclusion = Conclusion(text=text)
+		return self._conclusion
+
 	def write(self):
 		for finding in self.findings:
 			if finding.exists and SKIP_EXISTING:
@@ -399,6 +464,7 @@ class ROSProject:
 				continue
 			non_finding.write();
 			self.report.add_non_finding(non_finding)
+		self.conclusion.write()
 		self.report.write()
 		print("ROS Project written")
 
