@@ -86,6 +86,13 @@ class ReportAsset:
 		iid: int,
 		title: str
 	):
+
+		if type(id) != int:
+			raise Exception("ID must be an Integer")
+
+		if type(iid) != int:
+			raise Exception("Issue ID must be an Integer")
+
 		self.id = id
 		self.iid = iid
 		self.title = title
@@ -116,15 +123,16 @@ class ReportAsset:
 			encoding="UTF-8"
 		)
 
-	@staticmethod
 	def _markdown_to_dom(
+		self,
 		markdown_text: str
 	) -> typing.List[xml.dom.minidom.Element]:
 		pattern = re.compile('(<img .*?[^\/])>')
 		html = pypandoc.convert_text(
 			markdown_text,
 			'html5',
-			format='markdown_github'
+			format='markdown_github',
+			extra_args=[f"--id-prefix=ros{self.iid}"]
 		).replace('\r\n', '\n')
 		dom = xml.dom.minidom.parseString(f"<root>{html}</root>")
 		return dom.firstChild.childNodes
@@ -330,8 +338,8 @@ def readFindingFromIssue(issue):
 			status = label.split(":", maxsplit=1)[1]
 
 	return Finding(
-		id=issue.id,
-		iid=issue.iid,
+		id=int(issue.id),
+		iid=int(issue.iid),
 		title=issue.title,
 		description=issue.description,
 		technicaldescription=technicaldescription,
@@ -365,8 +373,8 @@ class ROSProject:
 		if self._non_findings is None:
 			self._non_findings = list(map(
 				lambda issue: NonFinding(
-					id=issue.id,
-					iid=issue.iid,
+					id=int(issue.id),
+					iid=int(issue.iid),
 					title=issue.title,
 					description=issue.description
 				),
