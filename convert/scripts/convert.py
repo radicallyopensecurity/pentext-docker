@@ -178,7 +178,7 @@ class Finding(ReportAsset):
 
 		root = doc.createElement("finding");
 		root.setAttribute("id", self.slug)
-		root.setAttribute("number", str(self.id))
+		root.setAttribute("number", str(self.iid))
 		root.setAttribute("threatLevel", self.threatlevel)
 		root.setAttribute("type", self.type)
 		root.setAttribute("status", self.status)
@@ -225,7 +225,7 @@ class NonFinding(ReportAsset):
 		doc = xml.dom.minidom.Document()
 		root = doc.createElement("non-finding");
 		root.setAttribute("id", self.slug)
-		root.setAttribute("number", str(self.id))
+		root.setAttribute("number", str(self.iid))
 
 		title = doc.createElement("title");
 		title.appendChild(doc.createTextNode(self.title))
