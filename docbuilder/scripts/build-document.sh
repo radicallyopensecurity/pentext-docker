@@ -1,8 +1,11 @@
 #!/bin/sh
+set -e
+
 cd "$CI_PROJECT_DIR"
 TARGET_DIR="target"
 PROJECT_NAME="$(echo ${CI_PROJECT_NAME} | sed s/^off-// | sed s/^pen-//)"
 
+set -x
 mkdir -p $TARGET_DIR
 
 to_fo()
