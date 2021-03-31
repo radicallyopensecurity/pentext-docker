@@ -11,6 +11,7 @@ import pypandoc
 from gitlab import Gitlab
 from slugify import slugify
 
+SKIP_EXISTING=(str(os.environ.get("SKIP_EXISTING", "1")) == "1")
 GITLAB_TOKEN=os.environ["PROJECT_ACCESS_TOKEN"]
 GITLAB_SERVER_URL = os.environ.get(
 	"CI_SERVER_URL",
@@ -136,8 +137,12 @@ class ReportAsset:
 			file.write(self.prettyxml.decode("UTF-8"))
 
 	@property
+	def exists(self):
+		return os.path.isfile(self.relative_path)
+
+	@property
 	def relative_path(self):
-		return self.filename;
+		return self.filename
 
 	@property
 	def filename(self):
@@ -324,7 +329,6 @@ def readFindingFromIssue(issue):
 		if label.lower().startswith("status:") is True:
 			status = label.split(":", maxsplit=1)[1]
 
-
 	return Finding(
 		id=issue.id,
 		iid=issue.iid,
@@ -372,9 +376,13 @@ class ROSProject:
 
 	def write(self):
 		for finding in self.findings:
-			finding.write();
+			if finding.exists and SKIP_EXISTING:
+				continue
+			finding.write()
 			self.report.add_finding(finding)
 		for non_finding in self.non_findings:
+			if non_finding.exists and SKIP_EXISTING:
+				continue
 			non_finding.write();
 			self.report.add_non_finding(non_finding)
 		self.report.write()
