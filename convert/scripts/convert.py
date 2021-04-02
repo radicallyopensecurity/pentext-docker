@@ -259,11 +259,9 @@ class Conclusion(ReportAsset):
 
 	def __init__(
 		self,
-		id: int,
-		iid: int,
 		text: str
 	) -> None:
-		super().__init__(id, iid, "Conclusion")
+		super().__init__(0, 0, "Conclusion")
 		self.text = text
 		self._doc = None
 
@@ -446,7 +444,7 @@ class ROSProject:
 	@property
 	def conclusion(self):
 		if self._conclusion is None:
-			issues = self.gitlab_project.issues.list(title="Conclusion")
+			issues = self.gitlab_project.issues.list(search="Conclusion")
 			if len(issues) > 1:
 				raise Error("Multiple conclusions found in GitLab issues.")
 			text = issues[0].description if (len(issues) == 1) else None
