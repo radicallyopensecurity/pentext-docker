@@ -334,7 +334,7 @@ def readFindingFromIssue(issue):
 	for label in issue.labels:
 		if label.lower().startswith("threatlevel:") is True:
 			threatlevel = label.split(":", maxsplit=1)[1]
-		if label.lower().startswith("status:") is True:
+		if label.lower().startswith("reteststatus:") is True:
 			status = label.split(":", maxsplit=1)[1]
 
 	return Finding(
