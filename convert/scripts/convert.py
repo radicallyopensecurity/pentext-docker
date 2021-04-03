@@ -444,7 +444,10 @@ class ROSProject:
 	@property
 	def conclusion(self):
 		if self._conclusion is None:
-			issues = self.gitlab_project.issues.list(search="Conclusion")
+			args = dict()
+			args["search"] = "Conclusion"
+			args["in"] = "title"
+			issues = self.gitlab_project.issues.list(**args)
 			if len(issues) > 1:
 				raise Error("Multiple conclusions found in GitLab issues.")
 			text = issues[0].description if (len(issues) == 1) else None
