@@ -447,7 +447,10 @@ class ROSProject:
 			args = dict()
 			args["search"] = "Conclusion"
 			args["in"] = "title"
-			issues = self.gitlab_project.issues.list(**args)
+			issues = list(filter(
+				lambda issue: issue.title.lower() == "conclusion",
+				self.gitlab_project.issues.list(**args)
+			))
 			if len(issues) > 1:
 				raise Error("Multiple conclusions found in GitLab issues.")
 			text = issues[0].description if (len(issues) == 1) else None
