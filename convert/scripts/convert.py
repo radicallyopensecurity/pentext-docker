@@ -84,7 +84,8 @@ class ReportAsset:
 		self,
 		id: int,
 		iid: int,
-		title: str
+		title: str,
+		project=None
 	):
 
 		if type(id) != int:
@@ -96,6 +97,7 @@ class ReportAsset:
 		self.id = id
 		self.iid = iid
 		self.title = title
+		self.project = project
 
 	@property
 	def doc(self):
@@ -123,11 +125,29 @@ class ReportAsset:
 			encoding="UTF-8"
 		)
 
+	def _resolve_internal_links(self, markdown_text: str) -> str:
+
+		def resolve_link(match):
+			try:
+				target_finding = next(filter(
+					lambda finding: finding.iid == int(match.group(1)),
+					self.project.findings
+				))
+				return f'<a href="#{target_finding.slug}"/>';
+			except StopIteration:
+				return f"{match.group()}"
+
+		return re.sub(
+			r'#(\d+)',
+			resolve_link,
+			markdown_text
+		)
+
 	def _markdown_to_dom(
 		self,
 		markdown_text: str
 	) -> typing.List[xml.dom.minidom.Element]:
-		pattern = re.compile('(<img .*?[^\/])>')
+		markdown_text = self._resolve_internal_links(markdown_text)
 		html = pypandoc.convert_text(
 			markdown_text,
 			'html5',
@@ -174,9 +194,15 @@ class Finding(ReportAsset):
 		recommendation: str="",
 		threatlevel: str="Unknown",
 		type: str="Unknown",
-		status: str="none"
+		status: str="none",
+		project=None
 	) -> None:
-		super().__init__(id, iid, title)
+		super().__init__(
+			id=id,
+			iid=iid,
+			title=title,
+			project=project
+		)
 		self.description = description
 		self.technicaldescription = technicaldescription
 		self.impact = impact
@@ -228,9 +254,15 @@ class NonFinding(ReportAsset):
 		id: int,
 		iid: int,
 		title: str,
-		description: str=""
+		description: str="",
+		project=None
 	) -> None:
-		super().__init__(id, iid, title)
+		super().__init__(
+			id=id,
+			iid=iid,
+			title=title,
+			project=project
+		)
 		self.description = description
 
 	@property
@@ -354,68 +386,6 @@ class Report:
 		self.add("nonFindings", non_finding)
 
 
-
-def readFindingFromIssue(issue):
-	technicaldescription = ""
-	impact = ""
-	recommendation = ""
-	threatlevel = "Unknown"
-	type = "Unknown"
-	status = "none"
-
-	i = 0
-	for discussion in issue.discussions.list(as_list=False):
-
-		notes = filter(
-			lambda note: note["system"] == False,
-			discussion.attributes["notes"]
-		)
-
-		try:
-			comment = next(notes)["body"]
-		except StopIteration:
-			# skip system events without notes
-			continue
-
-		i += 1
-
-		# the first comment is the technical description
-		# unless later found explicitly
-		if i == 1:
-			technicaldescription = comment
-		
-		# other comments can have a meaning as well 
-		lines = comment.splitlines()
-		first_line = lines.pop(0).lower().strip().strip(":#")
-		if first_line == "recommendation":
-			recommendation = "\n".join(lines)
-		elif first_line == "impact":
-			impact = "\n".join(lines)
-		elif first_line == "type":
-			type = lines[0].strip()
-		elif (first_line.replace(" ", "") == "technicaldescription"):
-			technicaldescription = "\n".join(lines)
-
-	for label in issue.labels:
-		if label.lower().startswith("threatlevel:") is True:
-			threatlevel = label.split(":", maxsplit=1)[1]
-		if label.lower().startswith("reteststatus:") is True:
-			status = label.split(":", maxsplit=1)[1]
-
-	return Finding(
-		id=int(issue.id),
-		iid=int(issue.iid),
-		title=issue.title,
-		description=issue.description,
-		technicaldescription=technicaldescription,
-		impact=impact,
-		recommendation=recommendation,
-		threatlevel=threatlevel,
-		type=type,
-		status=status
-	)
-
-
 class ROSProject:
 
 	def __init__(self, project_id: int) -> None:
@@ -429,7 +399,7 @@ class ROSProject:
 	def findings(self):
 		if self._findings is None:
 			self._findings = list(map(
-				readFindingFromIssue,
+				self.readFindingFromIssue,
 				self.gitlab_project.issues.list(
 					labels=["finding"],
 					as_list=False
@@ -445,7 +415,8 @@ class ROSProject:
 					id=int(issue.id),
 					iid=int(issue.iid),
 					title=issue.title,
-					description=issue.description
+					description=issue.description,
+					project=self
 				),
 				self.gitlab_project.issues.list(
 					labels=["non-finding"],
@@ -484,6 +455,67 @@ class ROSProject:
 		self.conclusion.write()
 		self.report.write()
 		print("ROS Project written")
+
+	def readFindingFromIssue(self, issue):
+		technicaldescription = ""
+		impact = ""
+		recommendation = ""
+		threatlevel = "Unknown"
+		type = "Unknown"
+		status = "none"
+
+		i = 0
+		for discussion in issue.discussions.list(as_list=False):
+
+			notes = filter(
+				lambda note: note["system"] == False,
+				discussion.attributes["notes"]
+			)
+
+			try:
+				comment = next(notes)["body"]
+			except StopIteration:
+				# skip system events without notes
+				continue
+
+			i += 1
+
+			# the first comment is the technical description
+			# unless later found explicitly
+			if i == 1:
+				technicaldescription = comment
+
+			# other comments can have a meaning as well 
+			lines = comment.splitlines()
+			first_line = lines.pop(0).lower().strip().strip(":#")
+			if first_line == "recommendation":
+				recommendation = "\n".join(lines)
+			elif first_line == "impact":
+				impact = "\n".join(lines)
+			elif first_line == "type":
+				type = lines[0].strip()
+			elif (first_line.replace(" ", "") == "technicaldescription"):
+				technicaldescription = "\n".join(lines)
+
+		for label in issue.labels:
+			if label.lower().startswith("threatlevel:") is True:
+				threatlevel = label.split(":", maxsplit=1)[1]
+			if label.lower().startswith("reteststatus:") is True:
+				status = label.split(":", maxsplit=1)[1]
+
+		return Finding(
+			id=int(issue.id),
+			iid=int(issue.iid),
+			title=issue.title,
+			description=issue.description,
+			technicaldescription=technicaldescription,
+			impact=impact,
+			recommendation=recommendation,
+			threatlevel=threatlevel,
+			type=type,
+			status=status,
+			project=self
+		)
 
 
 project = ROSProject(os.environ["CI_PROJECT_ID"])
