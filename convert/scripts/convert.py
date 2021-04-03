@@ -365,7 +365,18 @@ def readFindingFromIssue(issue):
 
 	i = 0
 	for discussion in issue.discussions.list(as_list=False):
-		comment = discussion.attributes["notes"][0]["body"]
+
+		notes = filter(
+			lambda note: note["system"] == False,
+			discussion.attributes["notes"]
+		)
+
+		try:
+			comment = next(notes)["body"]
+		except StopIteration:
+			# skip system events without notes
+			continue
+
 		i += 1
 
 		# the first comment is the technical description
