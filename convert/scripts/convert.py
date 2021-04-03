@@ -312,7 +312,7 @@ def readFindingFromIssue(issue):
 	status = "none"
 
 	i = 0
-	for discussion in issue.discussions.list(per_page=100):
+	for discussion in issue.discussions.list(as_list=False):
 		comment = discussion.attributes["notes"][0]["body"]
 		i += 1
 
@@ -366,7 +366,7 @@ class ROSProject:
 				readFindingFromIssue,
 				self.gitlab_project.issues.list(
 					labels=["finding"],
-					per_page=100
+					as_list=False
 				)
 			))
 		return self._findings
@@ -383,7 +383,7 @@ class ROSProject:
 				),
 				self.gitlab_project.issues.list(
 					labels=["non-finding"],
-					per_page=100
+					as_list=False
 				)
 			))
 		return self._non_findings
