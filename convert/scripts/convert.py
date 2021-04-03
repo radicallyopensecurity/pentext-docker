@@ -380,19 +380,21 @@ def readFindingFromIssue(issue):
 		i += 1
 
 		# the first comment is the technical description
+		# unless later found explicitly
 		if i == 1:
 			technicaldescription = comment
-			continue
 		
 		# other comments can have a meaning as well 
 		lines = comment.splitlines()
-		first_line = lines.pop(0)
-		if first_line.lower().strip().endswith("recommendation"):
+		first_line = lines.pop(0).lower().strip().strip(":#")
+		if first_line == "recommendation":
 			recommendation = "\n".join(lines)
-		elif first_line.lower().strip().endswith("impact"):
+		elif first_line == "impact":
 			impact = "\n".join(lines)
-		elif first_line.lower().strip().endswith("type"):
+		elif first_line == "type":
 			type = lines[0].strip()
+		elif (first_line.replace(" ", "") == "technicaldescription"):
+			technicaldescription = "\n".join(lines)
 
 	for label in issue.labels:
 		if label.lower().startswith("threatlevel:") is True:
