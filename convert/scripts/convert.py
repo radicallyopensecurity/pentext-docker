@@ -336,7 +336,7 @@ class Conclusion(ReportAsset):
 		if dest is None:
 			dest = self.relative_path
 		with open(dest, "w", encoding="UTF-8") as file:
-			print(f"writing report to {dest}")
+			print(f"writing conclusion to {dest}")
 			file.write(self.doc.toprettyxml(indent="\t"))
 
 
