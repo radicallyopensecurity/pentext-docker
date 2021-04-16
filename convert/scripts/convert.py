@@ -357,7 +357,7 @@ class Report:
 			dest = self.path
 		with open(dest, "w", encoding="UTF-8") as file:
 			print(f"writing report to {dest}")
-			file.write(self.doc.toprettyxml(indent="\t"))
+			file.write(self.doc.toxml())
 
 	def get_section(self, section_name):
 		for section in self.doc.documentElement.getElementsByTagName("section"):
