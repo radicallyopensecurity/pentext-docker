@@ -308,6 +308,7 @@ class Conclusion(ReportAsset):
 	@property
 	def doc(self):
 		if self._doc is None:
+			print(f"Reading Conclusion from {self.relative_path}")
 			doc = xml.dom.minidom.parse(self.relative_path)
 			self._doc = self.replace_todo(doc)
 		return self._doc
