@@ -322,22 +322,36 @@ class Conclusion(ReportAsset):
 			# skip when no Conclusion was found in GitLab issues 
 			return doc
 
-		# replace todo with user text
 		todo = todos[0]
-		n = self._markdown_to_dom(todo.description)
-		todo.parentNode.replaceChild(n, todo)
+		if todo.parentNode.tagName == "p":
+			# <p><todo/></p>
+			todo = todo.parentNode
+
+		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
+		for node in self._markdown_to_dom(self.text):
+			todo.parentNode.insertBefore(node, todo)
+			todo.parentNode.insertBefore(doc.createTextNode("\n"), todo)
+		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
+
+		# remove empty text node before the todo item
+		prev = todo.previousSibling
+		if (prev is not None) and (prev.nodeType == doc.TEXT_NODE) and (len(prev.nodeValue.strip()) == 0):
+			prev.parentNode.removeChild(prev)
+		todo.parentNode.removeChild(todo)
 
 		return doc
 
 	def write(self, dest=None):
 		if self.text is None:
-			print("No conclusion issue found - skipping {self.relative_path}")
+			print(f"No conclusion issue found - skipping {self.relative_path}")
 			return
 		if dest is None:
 			dest = self.relative_path
+
+		xml_content = self.doc.toxml()
 		with open(dest, "w", encoding="UTF-8") as file:
 			print(f"writing conclusion to {dest}")
-			file.write(self.doc.toprettyxml(indent="\t"))
+			file.write(xml_content)
 
 
 class Report:
