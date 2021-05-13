@@ -287,19 +287,24 @@ class NonFinding(ReportAsset):
 		return f"non-findings/{self.filename}"
 
 
-class Conclusion(ReportAsset):
+class ReportAssetSection(ReportAsset):
 
 	def __init__(
 		self,
-		text: str
+		text: str,
+		**kwargs
 	) -> None:
-		super().__init__(0, 0, "Conclusion")
+		super().__init__(0, 0, self.section_title, **kwargs)
 		self.text = text
 		self._doc = None
 
 	@property
+	def section_title(self):
+		raise NotImplementedError;
+
+	@property
 	def filename(self):
-		return "conclusion.xml"
+		raise NotImplementedError;
 
 	@property
 	def relative_path(self):
@@ -307,8 +312,35 @@ class Conclusion(ReportAsset):
 
 	@property
 	def doc(self):
+		return self._doc
+
+	def write(self, dest=None):
+		if self.text is None:
+			print(f"No {self.title} issue found - skipping {self.relative_path}")
+			return
+		if dest is None:
+			dest = self.relative_path
+
+		xml_content = self.doc.toxml()
+		with open(dest, "w", encoding="UTF-8") as file:
+			print(f"writing {self.title} to {dest}")
+			file.write(xml_content)
+
+
+class Conclusion(ReportAssetSection):
+
+	@property
+	def section_title(self):
+		return "Conclusion"
+
+	@property
+	def filename(self):
+		return "conclusion.xml"
+
+	@property
+	def doc(self):
 		if self._doc is None:
-			print(f"Reading Conclusion from {self.relative_path}")
+			print(f"Reading {self.title} from {self.relative_path}")
 			doc = xml.dom.minidom.parse(self.relative_path)
 			self._doc = self.replace_todo(doc)
 		return self._doc
@@ -319,7 +351,7 @@ class Conclusion(ReportAsset):
 			# skip when no <todo> element was found in XML
 			return doc
 		if self.text == None:
-			# skip when no Conclusion was found in GitLab issues 
+			# skip when this asset was not found in GitLab issues
 			return doc
 
 		todo = todos[0]
@@ -341,17 +373,35 @@ class Conclusion(ReportAsset):
 
 		return doc
 
-	def write(self, dest=None):
-		if self.text is None:
-			print(f"No conclusion issue found - skipping {self.relative_path}")
-			return
-		if dest is None:
-			dest = self.relative_path
 
-		xml_content = self.doc.toxml()
-		with open(dest, "w", encoding="UTF-8") as file:
-			print(f"writing conclusion to {dest}")
-			file.write(xml_content)
+class ResultsInANutshell(ReportAssetSection):
+
+	@property
+	def section_title(self):
+		return "Results In A Nutshell"
+
+	@property
+	def filename(self):
+		return "resultsinanutshell.xml"
+
+	@property
+	def doc(self):
+		doc = xml.dom.minidom.Document()
+
+		root = doc.createElement("section")
+		root.setAttribute("id", "resultsinanutshell")
+		root.setAttribute("xml:base", self.filename)
+
+		title = doc.createElement("title");
+		title.appendChild(doc.createTextNode(self.title))
+		root.appendChild(title)
+
+		section_nodes = self._markdown_to_dom(self.text)
+		for node in section_nodes:
+			root.appendChild(node)
+
+		doc.appendChild(root)
+		return doc
 
 
 class Report:
@@ -408,6 +458,7 @@ class ROSProject:
 		self._findings = None
 		self._non_findings = None
 		self._conclusion = None
+		self._resultsinanutshell = None
 		self.report = Report()
 
 	@property
@@ -440,21 +491,51 @@ class ROSProject:
 			))
 		return self._non_findings
 
+	@staticmethod
+	def __permissive_user_input(text: str) -> str:
+		return text.lower().replace(" ", "")
+
 	@property
 	def conclusion(self):
+		_section = "Conclusion"
+		_simplify = self.__permissive_user_input
 		if self._conclusion is None:
 			args = dict()
-			args["search"] = "Conclusion"
+			args["search"] = _section
 			args["in"] = "title"
 			issues = list(filter(
-				lambda issue: issue.title.lower() == "conclusion",
+				lambda issue: _simplify(issue.title) == _simplify(_section),
 				self.gitlab_project.issues.list(**args)
 			))
 			if len(issues) > 1:
-				raise Error("Multiple conclusions found in GitLab issues.")
+				raise Error(f"Multiple {_section} issues found on GitLab.")
 			text = issues[0].description if (len(issues) == 1) else None
-			self._conclusion = Conclusion(text=text)
+			self._conclusion = Conclusion(
+				text=text,
+				project=self
+			)
 		return self._conclusion
+
+	@property
+	def resultsinanutshell(self):
+		_section = "Results In A Nutshell"
+		_simplify = self.__permissive_user_input
+		if self._resultsinanutshell is None:
+			args = dict()
+			args["search"] = _section
+			args["in"] = "title"
+			issues = list(filter(
+				lambda issue: _simplify(issue.title) == _simplify(_section),
+				self.gitlab_project.issues.list(**args)
+			))
+			if len(issues) > 1:
+				raise Error(f"Multiple {_section} issues found on GitLab.")
+			text = issues[0].description if (len(issues) == 1) else None
+			self._resultsinanutshell = ResultsInANutshell(
+				text=text,
+				project=self
+			)
+		return self._resultsinanutshell
 
 	def write(self):
 		for finding in self.findings:
@@ -468,6 +549,7 @@ class ROSProject:
 			non_finding.write();
 			self.report.add_non_finding(non_finding)
 		self.conclusion.write()
+		self.resultsinanutshell.write()
 		self.report.write()
 		print("ROS Project written")
 
