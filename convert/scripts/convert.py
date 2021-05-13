@@ -314,8 +314,12 @@ class ReportAssetSection(ReportAsset):
 	def doc(self):
 		return self._doc
 
+	@property
+	def is_user_modified(self):
+		return self.text is not None
+
 	def write(self, dest=None):
-		if self.text is None:
+		if self.is_user_modified is False:
 			print(f"No {self.title} issue found - skipping {self.relative_path}")
 			return
 		if dest is None:
@@ -364,6 +368,78 @@ class Conclusion(ReportAssetSection):
 			todo.parentNode.insertBefore(node, todo)
 			todo.parentNode.insertBefore(doc.createTextNode("\n"), todo)
 		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
+
+		# remove empty text node before the todo item
+		prev = todo.previousSibling
+		if (prev is not None) and (prev.nodeType == doc.TEXT_NODE) and (len(prev.nodeValue.strip()) == 0):
+			prev.parentNode.removeChild(prev)
+		todo.parentNode.removeChild(todo)
+
+		return doc
+
+
+class FutureWork(ReportAssetSection):
+
+	def __init__(
+		self,
+		items: typing.List[typing.Dict[str, str]],
+		**kwargs
+	) -> None:
+		super().__init__(None, **kwargs)
+		self.items = items
+		self._doc = None
+
+	@property
+	def section_title(self):
+		return "Future Work"
+
+	@property
+	def filename(self):
+		return "futurework.xml"
+
+	@property
+	def is_user_modified(self):
+		return len(self.items) > 0
+
+	@property
+	def doc(self):
+		if self._doc is None:
+			print(f"Reading {self.title} from {self.relative_path}")
+			doc = xml.dom.minidom.parse(self.relative_path)
+			self._doc = self.replace_todo(doc)
+		return self._doc
+
+	def replace_todo(self, doc):
+		todos = doc.documentElement.getElementsByTagName("todo")
+		if len(todos) == 0:
+			# skip when no <todo> element was found in XML
+			return doc
+		if self.is_user_modified is False:
+			# skip when no GitLab issues with 'future-work' label were found
+			return doc
+
+		todo = todos[0]
+		if todo.parentNode.tagName == "li":
+			# <li><todo/></li>
+			todo = todo.parentNode
+
+		todo.parentNode.insertBefore(
+			doc.createComment("pentext-docker: convert"),
+			todo
+		)
+		for item in self.items:
+			futurework_item = doc.createElement("li")
+			_title = doc.createElement("b")
+			_title.appendChild(doc.createTextNode(item.title))
+			futurework_item.appendChild(_title)
+			for node in self._markdown_to_dom(item.description):
+				futurework_item.appendChild(node)
+				futurework_item.appendChild(doc.createTextNode("\n"))
+			todo.parentNode.insertBefore(futurework_item, todo)
+		todo.parentNode.insertBefore(
+			doc.createComment("pentext-docker: convert"),
+			todo
+		)
 
 		# remove empty text node before the todo item
 		prev = todo.previousSibling
@@ -459,6 +535,7 @@ class ROSProject:
 		self._non_findings = None
 		self._conclusion = None
 		self._resultsinanutshell = None
+		self._futurework = None
 		self.report = Report()
 
 	@property
@@ -537,6 +614,17 @@ class ROSProject:
 			)
 		return self._resultsinanutshell
 
+	@property
+	def futurework(self):
+		_section = "Future Work"
+		_simplify = self.__permissive_user_input
+		if self._futurework is None:
+			self._futurework = FutureWork(
+				items=self.gitlab_project.issues.list(labels=["future-work"]),
+				project=self
+			)
+		return self._futurework
+
 	def write(self):
 		for finding in self.findings:
 			if finding.exists and SKIP_EXISTING:
@@ -550,6 +638,7 @@ class ROSProject:
 			self.report.add_non_finding(non_finding)
 		self.conclusion.write()
 		self.resultsinanutshell.write()
+		self.futurework.write()
 		self.report.write()
 		print("ROS Project written")
 
