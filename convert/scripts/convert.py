@@ -518,7 +518,13 @@ class Report:
 		el.setAttribute("xmlns:xi", "http://www.w3.org/2001/XInclude")
 		el.setAttribute("href", os.path.join("..", item.relative_path))
 		section = self.get_section(section_name)
-		section.appendChild(el)
+		if section is None:
+			print(
+				f"A {section_name} section was not found in the XML file."
+				f" - {section_name} will not be included."
+			)
+		else:
+			section.appendChild(el)
 
 	def add_finding(self, finding: Finding) -> None:
 		self.add("findings", finding)
