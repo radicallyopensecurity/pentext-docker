@@ -681,7 +681,7 @@ class ROSProject:
 			lines = comment.splitlines()
 			first_line = lines.pop(0).lower().strip().strip(":#")
 			if first_line == "recommendation":
-				recommendation = "\n".join(lines)
+				recommendation = "\n".join(lines).strip()
 			elif first_line == "impact":
 				impact = "\n".join(lines)
 			elif first_line == "type":
