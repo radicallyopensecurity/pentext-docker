@@ -325,10 +325,10 @@ class ReportAssetSection(ReportAsset):
 		if dest is None:
 			dest = self.relative_path
 
-		xml_content = self.doc.toxml()
+		xml_content = self.prettyxml
 		with open(dest, "w", encoding="UTF-8") as file:
 			print(f"writing {self.title} to {dest}")
-			file.write(xml_content)
+			file.write(xml_content.decode("UTF-8"))
 
 
 class Conclusion(ReportAssetSection):
