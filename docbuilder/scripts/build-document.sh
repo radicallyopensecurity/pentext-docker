@@ -40,7 +40,8 @@ to_pdf()
 
 if [ -f "source/report.xml" ]; then
 	to_pdf report
-elif [ -f "source/offerte.xml" ]; then
+fi
+if [ -f "source/offerte.xml" ]; then
 	to_pdf offerte
 fi
 
