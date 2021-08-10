@@ -152,11 +152,17 @@ class ReportAsset:
 		html = re.sub(closing, "</code></pre>", html)
 		return html
 
+	@staticmethod
+	def _remove_syntax_highlighting(markdown_text: str) -> str:
+		syntax_highlighting_pattern = re.compile(r"```.+$", re.MULTILINE)
+		return re.sub(syntax_highlighting_pattern, "```", markdown_text)
+
 	def _markdown_to_dom(
 		self,
 		markdown_text: str
 	) -> typing.List[xml.dom.minidom.Element]:
 		markdown_text = self._resolve_internal_links(markdown_text)
+		markdown_text = self._remove_syntax_highlighting(markdown_text)
 		html = pypandoc.convert_text(
 			markdown_text,
 			'html5',
