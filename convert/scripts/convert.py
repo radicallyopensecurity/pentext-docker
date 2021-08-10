@@ -120,10 +120,11 @@ class ReportAsset:
 
 	@property
 	def prettyxml(self):
-		return self.processed_doc.toprettyxml(
+		prettyxml = self.processed_doc.toprettyxml(
 			indent="\t",
 			encoding="UTF-8"
-		)
+		).decode("UTF-8")
+		return self._fix_code_blocks(prettyxml);
 
 	def _resolve_internal_links(self, markdown_text: str) -> str:
 
@@ -142,6 +143,14 @@ class ReportAsset:
 			resolve_link,
 			markdown_text
 		)
+
+	@staticmethod
+	def _fix_code_blocks(html: str) -> str:
+		opening = re.compile(r"<pre>[\s\r\n]*<code>[\s\r\n]*", re.MULTILINE)
+		closing = re.compile(r"[\s\r\n]*</code>[\s\r\n]*</pre>", re.MULTILINE)
+		html = re.sub(opening, "<pre><code>", html)
+		html = re.sub(closing, "</code></pre>", html)
+		return html
 
 	def _markdown_to_dom(
 		self,
@@ -162,7 +171,7 @@ class ReportAsset:
 			path = self.relative_path
 		with open(path, "w") as file:
 			print(f"writing {path}")
-			file.write(self.prettyxml.decode("UTF-8"))
+			file.write(self.prettyxml)
 
 	@property
 	def exists(self):
@@ -328,7 +337,7 @@ class ReportAssetSection(ReportAsset):
 		xml_content = self.prettyxml
 		with open(dest, "w", encoding="UTF-8") as file:
 			print(f"writing {self.title} to {dest}")
-			file.write(xml_content.decode("UTF-8"))
+			file.write(xml_content)
 
 
 class Conclusion(ReportAssetSection):
