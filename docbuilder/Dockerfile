@@ -1,7 +1,7 @@
 ARG FOP_VERSION=2.6
 ARG SAXON_VERSION=10.3
 
-FROM openjdk:alpine as download-and-extract-tools
+FROM openjdk:18-alpine as download-and-extract-tools
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
@@ -16,7 +16,7 @@ RUN gpg --verify fop-${FOP_VERSION}-bin.tar.gz.asc fop-${FOP_VERSION}-bin.tar.gz
 RUN tar -xf fop-${FOP_VERSION}-bin.tar.gz
 RUN jarsigner -verify Saxon-HE-${SAXON_VERSION}.jar
 
-FROM java:openjdk-8-jre-alpine
+FROM openjdk:18-alpine
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
