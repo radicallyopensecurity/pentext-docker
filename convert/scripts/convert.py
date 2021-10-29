@@ -565,6 +565,7 @@ class ROSProject:
 			self._findings = list(map(
 				self.readFindingFromIssue,
 				self.gitlab_project.issues.list(
+					state="opened",
 					labels=["finding"],
 					as_list=False
 				)
@@ -583,6 +584,7 @@ class ROSProject:
 					project=self
 				),
 				self.gitlab_project.issues.list(
+					state="opened",
 					labels=["non-finding"],
 					as_list=False
 				)
@@ -599,6 +601,7 @@ class ROSProject:
 		_simplify = self.__permissive_user_input
 		if self._conclusion is None:
 			args = dict()
+			args["state"] = "opened"
 			args["search"] = _section
 			args["in"] = "title"
 			issues = list(filter(
@@ -620,6 +623,7 @@ class ROSProject:
 		_simplify = self.__permissive_user_input
 		if self._resultsinanutshell is None:
 			args = dict()
+			args["state"] = "opened"
 			args["search"] = _section
 			args["in"] = "title"
 			issues = list(filter(
@@ -641,7 +645,10 @@ class ROSProject:
 		_simplify = self.__permissive_user_input
 		if self._futurework is None:
 			self._futurework = FutureWork(
-				items=self.gitlab_project.issues.list(labels=["future-work"]),
+				items=self.gitlab_project.issues.list(
+					state="opened",
+					labels=["future-work"]
+				),
 				project=self
 			)
 		return self._futurework
