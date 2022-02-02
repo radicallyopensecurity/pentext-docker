@@ -8,6 +8,17 @@ PROJECT_NAME="$(echo ${CI_PROJECT_NAME} | sed s/^off-// | sed s/^pen-//)"
 set -x
 mkdir -p $TARGET_DIR
 
+to_csv()
+{
+	DOC_TYPE="${1:-report}"
+	echo "Building ${TARGET_DIR}/${DOC_TYPE}_${PROJECT_NAME}.csv"
+	java -jar /saxon.jar \
+		"-s:source/${DOC_TYPE}.xml" \
+		"-xsl:xslt/findings2csv.xsl" \
+		"-o:${TARGET_DIR}/${DOC_TYPE}_${PROJECT_NAME}.csv" \
+		-xi
+}
+
 to_fo()
 {
 	DOC_TYPE="${1:-report}"
@@ -40,6 +51,7 @@ to_pdf()
 
 if [ -f "source/report.xml" ]; then
 	to_pdf report
+	to_csv report
 fi
 if [ -f "source/offerte.xml" ]; then
 	to_pdf offerte
