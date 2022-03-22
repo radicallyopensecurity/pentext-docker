@@ -40,11 +40,8 @@ to_pdf()
 		"${TARGET_DIR}/${DOC_TYPE}_${PROJECT_NAME}.fo" \
 		"${TARGET_DIR}/${DOC_TYPE}_${PROJECT_NAME}.pdf" \
 		-v \
-		-nocopy \
-		-noaccesscontent \
 		-noassembledoc \
 		-noedit \
-		-noannotations \
 		-o "$PDF_PASSWORD" \
 		-u "$PDF_PASSWORD" 
 }
