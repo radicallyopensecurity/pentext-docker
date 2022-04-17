@@ -5,6 +5,7 @@ import os
 import os.path
 import pathlib
 import xml.dom.minidom
+import xml.etree.ElementTree
 import urllib.request
 
 import pypandoc
@@ -120,8 +121,7 @@ class ReportAsset:
 
 	@property
 	def prettyxml(self):
-		prettyxml = self.processed_doc.toprettyxml(
-			indent="\t",
+		prettyxml = self.processed_doc.toxml(
 			encoding="UTF-8"
 		).decode("UTF-8")
 		return self._fix_code_blocks(prettyxml);
@@ -169,7 +169,11 @@ class ReportAsset:
 			format='gfm',
 			extra_args=[f"--id-prefix=ros{self.iid}"]
 		).replace('\r\n', '\n')
-		dom = xml.dom.minidom.parseString(f"<root>{html}</root>")
+		htmlTree = xml.etree.ElementTree.fromstring(f"<root>{html}</root>")
+		xml.etree.ElementTree.indent(htmlTree, space=" ", level=1)
+		dom = xml.dom.minidom.parseString(
+			xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
+		)
 		return dom.firstChild.childNodes
 
 	def write(self, path=None) -> None:
@@ -259,9 +263,12 @@ class Finding(ReportAsset):
 		if markdown_text is None:
 			markdown_text = self.__getattribute__(name)
 		section_nodes = self._markdown_to_dom(markdown_text)
-		for node in section_nodes:
+		while len(section_nodes):
+			node = section_nodes[0]
 			section.appendChild(node)
 		parentNode.appendChild(section)
+		parentNode.appendChild(parentNode.createTextNode("\n"))
+
 
 	@property
 	def relative_path(self):
@@ -298,7 +305,8 @@ class NonFinding(ReportAsset):
 		root.appendChild(title)
 
 		content_nodes = self._markdown_to_dom(self.description)
-		for node in content_nodes:
+		while len(content_nodes):
+			node = content_nodes[0]
 			root.appendChild(node)
 		doc.appendChild(root)
 		return doc
@@ -385,9 +393,10 @@ class Conclusion(ReportAssetSection):
 			todo = todo.parentNode
 
 		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
-		for node in self._markdown_to_dom(self.text):
+		nodes = self._markdown_to_dom(self.text)
+		while len(nodes):
+			node = nodes[0]
 			todo.parentNode.insertBefore(node, todo)
-			todo.parentNode.insertBefore(doc.createTextNode("\n"), todo)
 		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
 
 		# remove empty text node before the todo item
@@ -453,7 +462,9 @@ class FutureWork(ReportAssetSection):
 			_title = doc.createElement("b")
 			_title.appendChild(doc.createTextNode(item.title))
 			futurework_item.appendChild(_title)
-			for node in self._markdown_to_dom(item.description):
+			nodes = self._markdown_to_dom(item.description)
+			while len(nodes):
+				node = nodes[0]
 				futurework_item.appendChild(node)
 				futurework_item.appendChild(doc.createTextNode("\n"))
 			todo.parentNode.insertBefore(futurework_item, todo)
@@ -494,7 +505,8 @@ class ResultsInANutshell(ReportAssetSection):
 		root.appendChild(title)
 
 		section_nodes = self._markdown_to_dom(self.text)
-		for node in section_nodes:
+		while len(section_nodes):
+			node = section_nodes[0]
 			root.appendChild(node)
 
 		doc.appendChild(root)
