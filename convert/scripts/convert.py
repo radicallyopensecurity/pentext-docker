@@ -174,6 +174,9 @@ class ReportAsset:
 		dom = xml.dom.minidom.parseString(
 			xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
 		)
+		nodes = dom.firstChild.childNodes
+		if isinstance(nodes[-1], xml.dom.minidom.Text):
+			nodes[-1].nodeValue = "\n"
 		return dom.firstChild.childNodes
 
 	def write(self, path=None) -> None:
@@ -242,23 +245,26 @@ class Finding(ReportAsset):
 		root.setAttribute("threatLevel", self.threatlevel)
 		root.setAttribute("type", self.type)
 		root.setAttribute("status", self.status)
+		root.appendChild(doc.createTextNode("\n"))
 
 		title = doc.createElement("title");
 		title.appendChild(doc.createTextNode(self.title))
 		root.appendChild(title)
+		root.appendChild(doc.createTextNode("\n"))
 
-		self.__append_section(root, "description")
-		self.__append_section(root, "technicaldescription")
-		self.__append_section(root, "impact")
-		self.__append_section(root, "recommendation")
+		self.__append_section(doc, root, "description")
+		self.__append_section(doc, root, "technicaldescription")
+		self.__append_section(doc, root, "impact")
+		self.__append_section(doc, root, "recommendation")
+
 		for update in self.updates:
 			# there can be multiple update sections
-			self.__append_section(root, "update", update)
+			self.__append_section(doc, root, "update", update)
 
 		doc.appendChild(root)
 		return doc
 
-	def __append_section(self, parentNode, name, markdown_text=None):
+	def __append_section(self, doc, parentNode, name, markdown_text=None):
 		section = xml.dom.minidom.Element(name)
 		if markdown_text is None:
 			markdown_text = self.__getattribute__(name)
@@ -267,7 +273,7 @@ class Finding(ReportAsset):
 			node = section_nodes[0]
 			section.appendChild(node)
 		parentNode.appendChild(section)
-		parentNode.appendChild(parentNode.createTextNode("\n"))
+		parentNode.appendChild(doc.createTextNode("\n"))
 
 
 	@property
@@ -299,10 +305,12 @@ class NonFinding(ReportAsset):
 		root = doc.createElement("non-finding");
 		root.setAttribute("id", self.slug)
 		root.setAttribute("number", str(self.iid))
+		root.appendChild(doc.createTextNode("\n"))
 
 		title = doc.createElement("title");
 		title.appendChild(doc.createTextNode(self.title))
 		root.appendChild(title)
+		root.appendChild(doc.createTextNode("\n"))
 
 		content_nodes = self._markdown_to_dom(self.description)
 		while len(content_nodes):
