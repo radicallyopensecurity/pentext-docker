@@ -166,7 +166,7 @@ class ReportAsset:
 		html = pypandoc.convert_text(
 			markdown_text,
 			'html5',
-			format='markdown_github',
+			format='gfm',
 			extra_args=[f"--id-prefix=ros{self.iid}"]
 		).replace('\r\n', '\n')
 		dom = xml.dom.minidom.parseString(f"<root>{html}</root>")
