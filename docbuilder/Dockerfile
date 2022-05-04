@@ -1,4 +1,4 @@
-ARG FOP_VERSION=2.6
+ARG FOP_VERSION=2.7
 ARG SAXON_VERSION=10.5
 
 FROM openjdk:18-alpine as download-and-extract-tools
