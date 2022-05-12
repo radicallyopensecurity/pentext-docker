@@ -53,5 +53,8 @@ fi
 if [ -f "source/offerte.xml" ]; then
 	to_pdf offerte
 fi
+if [ -f "source/document.xml" ]; then
+	to_pdf document
+fi
 
 ls -al $TARGET_DIR
