@@ -170,7 +170,10 @@ class ReportAsset:
 			extra_args=[f"--id-prefix=ros{self.iid}"]
 		).replace('\r\n', '\n')
 		htmlTree = xml.etree.ElementTree.fromstring(f"<root>{html}</root>")
-		xml.etree.ElementTree.indent(htmlTree, space=" ", level=1)
+		if hasattr(xml.etree.ElementTree, "indent"):
+			xml.etree.ElementTree.indent(htmlTree, space=" ", level=1)
+		else:
+			print("Warning: Python indentation not supported")
 		dom = xml.dom.minidom.parseString(
 			xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
 		)
