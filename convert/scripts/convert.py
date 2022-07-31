@@ -702,6 +702,11 @@ class ROSProject:
 			# other comments can have a meaning as well 
 			lines = comment.splitlines()
 			first_line = lines.pop(0).lower().strip().strip(":#")
+
+			# remove leading empty lines
+			while len(lines) and lines[0].strip() == "":
+				lines.pop()
+
 			if first_line == "recommendation":
 				recommendation = "\n".join(lines).strip()
 			elif first_line == "impact":
