@@ -712,7 +712,7 @@ class ROSProject:
 
 			# remove leading empty lines
 			while len(lines) and lines[0].strip() == "":
-				lines.pop()
+				lines.pop(0)
 
 			if first_line == "recommendation":
 				recommendation = "\n".join(lines).strip()
