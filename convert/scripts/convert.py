@@ -206,7 +206,7 @@ class Finding(ReportAsset):
 		description: str="",
 		technicaldescription: str="",
 		impact: str="",
-		updates: typing.Array[str]=[],
+		updates: typing.List[str]=[],
 		recommendation: str="",
 		threatlevel: str="Unknown",
 		type: str="Unknown",
