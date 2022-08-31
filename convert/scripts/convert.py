@@ -206,6 +206,7 @@ class Finding(ReportAsset):
 		description: str="",
 		technicaldescription: str="",
 		impact: str="",
+		updates: typing.List[str]=[],
 		recommendation: str="",
 		threatlevel: str="Unknown",
 		type: str="Unknown",
@@ -221,6 +222,7 @@ class Finding(ReportAsset):
 		self.description = description
 		self.technicaldescription = technicaldescription
 		self.impact = impact
+		self.updates = updates
 		self.recommendation = recommendation
 		self.threatlevel = threatlevel
 		self.type = type
@@ -245,13 +247,17 @@ class Finding(ReportAsset):
 		self.__append_section(root, "technicaldescription")
 		self.__append_section(root, "impact")
 		self.__append_section(root, "recommendation")
+		for update in self.updates:
+			# there can be multiple update sections
+			self.__append_section(root, "update", update)
 
 		doc.appendChild(root)
 		return doc
 
-	def __append_section(self, parentNode, name):
+	def __append_section(self, parentNode, name, markdown_text=None):
 		section = xml.dom.minidom.Element(name)
-		markdown_text = self.__getattribute__(name)
+		if markdown_text is None:
+			markdown_text = self.__getattribute__(name)
 		section_nodes = self._markdown_to_dom(markdown_text)
 		for node in section_nodes:
 			section.appendChild(node)
@@ -677,6 +683,7 @@ class ROSProject:
 		threatlevel = "Unknown"
 		type = "Unknown"
 		status = "none"
+		updates = []
 
 		i = 0
 		for discussion in issue.discussions.list(as_list=False):
@@ -702,10 +709,17 @@ class ROSProject:
 			# other comments can have a meaning as well 
 			lines = comment.splitlines()
 			first_line = lines.pop(0).lower().strip().strip(":#")
+
+			# remove leading empty lines
+			while len(lines) and lines[0].strip() == "":
+				lines.pop(0)
+
 			if first_line == "recommendation":
 				recommendation = "\n".join(lines).strip()
 			elif first_line == "impact":
 				impact = "\n".join(lines)
+			elif first_line == "update":
+				updates.append("\n".join(lines))
 			elif first_line == "type":
 				type = lines[0].strip()
 			elif (first_line.replace(" ", "") == "technicaldescription"):
@@ -724,6 +738,7 @@ class ROSProject:
 			description=issue.description,
 			technicaldescription=technicaldescription,
 			impact=impact,
+			updates=updates,
 			recommendation=recommendation,
 			threatlevel=threatlevel,
 			type=type,
