@@ -4,7 +4,8 @@ FROM openjdk:18-alpine as download-and-extract-tools
 ARG SAXON_VERSION
 
 RUN wget https://repo1.maven.org/maven2/net/sf/saxon/Saxon-HE/${SAXON_VERSION}/Saxon-HE-${SAXON_VERSION}.jar
-RUN jarsigner -verify Saxon-HE-${SAXON_VERSION}.jar
+# use strict to force error exit code when jar is unsigned
+RUN jarsigner -verify -strict Saxon-HE-${SAXON_VERSION}.jar
 
 FROM openjdk:18-alpine
 ARG SAXON_VERSION
