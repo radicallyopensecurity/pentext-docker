@@ -1,7 +1,7 @@
 ARG FOP_VERSION=2.7
 ARG SAXON_VERSION=10.5
 
-FROM openjdk:18-alpine as download-and-extract-tools
+FROM eclipse-temurin:19-alpine as download-and-extract-tools
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
@@ -16,7 +16,7 @@ RUN gpg --verify fop-${FOP_VERSION}-bin.tar.gz.asc fop-${FOP_VERSION}-bin.tar.gz
 RUN tar -xf fop-${FOP_VERSION}-bin.tar.gz
 RUN jarsigner -verify Saxon-HE-${SAXON_VERSION}.jar
 
-FROM openjdk:18-alpine
+FROM eclipse-temurin:19-alpine
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
