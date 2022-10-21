@@ -13,10 +13,10 @@ from slugify import slugify
 
 SKIP_EXISTING=(str(os.environ.get("SKIP_EXISTING", "1")) == "1")
 GITLAB_TOKEN=os.environ["PROJECT_ACCESS_TOKEN"]
-GITLAB_SERVER_URL = os.environ.get(
-	"CI_SERVER_URL",
-	"https://git.radicallyopensecurtity.com"
-)
+
+# Standard env variable for the base URL of the GitLab instance, including protocol and port
+# for example https://gitlab.example.org:8080
+GITLAB_SERVER_URL = os.environ.get("CI_SERVER_URL")
 
 gitlab = Gitlab(
   GITLAB_SERVER_URL,
