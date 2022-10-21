@@ -14,7 +14,8 @@ RUN wget https://downloads.apache.org/xmlgraphics/fop/binaries/fop-${FOP_VERSION
 RUN wget https://repo1.maven.org/maven2/net/sf/saxon/Saxon-HE/${SAXON_VERSION}/Saxon-HE-${SAXON_VERSION}.jar
 RUN gpg --verify fop-${FOP_VERSION}-bin.tar.gz.asc fop-${FOP_VERSION}-bin.tar.gz
 RUN tar -xf fop-${FOP_VERSION}-bin.tar.gz
-RUN jarsigner -verify Saxon-HE-${SAXON_VERSION}.jar
+# use strict to force error exit code when jar is unsigned
+RUN jarsigner -verify -strict Saxon-HE-${SAXON_VERSION}.jar
 
 FROM openjdk:18-alpine
 ARG FOP_VERSION
