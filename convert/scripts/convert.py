@@ -171,7 +171,7 @@ class ReportAsset:
 		).replace('\r\n', '\n')
 		htmlTree = xml.etree.ElementTree.fromstring(f"<root>{html}</root>")
 		if hasattr(xml.etree.ElementTree, "indent"):
-			xml.etree.ElementTree.indent(htmlTree, space=" ", level=1)
+			xml.etree.ElementTree.indent(htmlTree, space="  ", level=0)
 		else:
 			print("Warning: Python indentation not supported")
 		dom = xml.dom.minidom.parseString(
