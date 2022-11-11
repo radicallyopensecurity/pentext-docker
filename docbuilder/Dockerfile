@@ -9,8 +9,9 @@ RUN apk add --no-cache gnupg
 # safely download https://downloads.apache.org/xmlgraphics/fop/KEYS and verify the keys in it once, outside the docker.
 ADD KEYS .
 RUN gpg --import KEYS
-RUN wget https://downloads.apache.org/xmlgraphics/fop/binaries/fop-${FOP_VERSION}-bin.tar.gz
-RUN wget https://downloads.apache.org/xmlgraphics/fop/binaries/fop-${FOP_VERSION}-bin.tar.gz.asc
+RUN wget https://archive.apache.org/dist/xmlgraphics/fop/binaries/fop-${FOP_VERSION}-bin.tar.gz
+RUN wget https://archive.apache.org/dist/xmlgraphics/fop/binaries/fop-${FOP_VERSION}-bin.tar.gz.asc
+
 RUN wget https://repo1.maven.org/maven2/net/sf/saxon/Saxon-HE/${SAXON_VERSION}/Saxon-HE-${SAXON_VERSION}.jar
 RUN gpg --verify fop-${FOP_VERSION}-bin.tar.gz.asc fop-${FOP_VERSION}-bin.tar.gz
 RUN tar -xf fop-${FOP_VERSION}-bin.tar.gz
