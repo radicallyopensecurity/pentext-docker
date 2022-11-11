@@ -5,6 +5,7 @@ import os
 import os.path
 import pathlib
 import xml.dom.minidom
+import xml.etree.ElementTree
 import urllib.request
 
 import pypandoc
@@ -120,8 +121,7 @@ class ReportAsset:
 
 	@property
 	def prettyxml(self):
-		prettyxml = self.processed_doc.toprettyxml(
-			indent="\t",
+		prettyxml = self.processed_doc.toxml(
 			encoding="UTF-8"
 		).decode("UTF-8")
 		return self._fix_code_blocks(prettyxml);
@@ -166,10 +166,20 @@ class ReportAsset:
 		html = pypandoc.convert_text(
 			markdown_text,
 			'html5',
-			format='markdown_github',
+			format='gfm',
 			extra_args=[f"--id-prefix=ros{self.iid}"]
 		).replace('\r\n', '\n')
-		dom = xml.dom.minidom.parseString(f"<root>{html}</root>")
+		htmlTree = xml.etree.ElementTree.fromstring(f"<root>{html}</root>")
+		if hasattr(xml.etree.ElementTree, "indent"):
+			xml.etree.ElementTree.indent(htmlTree, space="  ", level=0)
+		else:
+			print("Warning: Python indentation not supported")
+		dom = xml.dom.minidom.parseString(
+			xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
+		)
+		nodes = dom.firstChild.childNodes
+		if isinstance(nodes[-1], xml.dom.minidom.Text):
+			nodes[-1].nodeValue = "\n"
 		return dom.firstChild.childNodes
 
 	def write(self, path=None) -> None:
@@ -238,30 +248,36 @@ class Finding(ReportAsset):
 		root.setAttribute("threatLevel", self.threatlevel)
 		root.setAttribute("type", self.type)
 		root.setAttribute("status", self.status)
+		root.appendChild(doc.createTextNode("\n"))
 
 		title = doc.createElement("title");
 		title.appendChild(doc.createTextNode(self.title))
 		root.appendChild(title)
+		root.appendChild(doc.createTextNode("\n"))
 
-		self.__append_section(root, "description")
-		self.__append_section(root, "technicaldescription")
-		self.__append_section(root, "impact")
-		self.__append_section(root, "recommendation")
+		self.__append_section(doc, root, "description")
+		self.__append_section(doc, root, "technicaldescription")
+		self.__append_section(doc, root, "impact")
+		self.__append_section(doc, root, "recommendation")
+
 		for update in self.updates:
 			# there can be multiple update sections
-			self.__append_section(root, "update", update)
+			self.__append_section(doc, root, "update", update)
 
 		doc.appendChild(root)
 		return doc
 
-	def __append_section(self, parentNode, name, markdown_text=None):
+	def __append_section(self, doc, parentNode, name, markdown_text=None):
 		section = xml.dom.minidom.Element(name)
 		if markdown_text is None:
 			markdown_text = self.__getattribute__(name)
 		section_nodes = self._markdown_to_dom(markdown_text)
-		for node in section_nodes:
+		while len(section_nodes):
+			node = section_nodes[0]
 			section.appendChild(node)
 		parentNode.appendChild(section)
+		parentNode.appendChild(doc.createTextNode("\n"))
+
 
 	@property
 	def relative_path(self):
@@ -292,13 +308,16 @@ class NonFinding(ReportAsset):
 		root = doc.createElement("non-finding");
 		root.setAttribute("id", self.slug)
 		root.setAttribute("number", str(self.iid))
+		root.appendChild(doc.createTextNode("\n"))
 
 		title = doc.createElement("title");
 		title.appendChild(doc.createTextNode(self.title))
 		root.appendChild(title)
+		root.appendChild(doc.createTextNode("\n"))
 
 		content_nodes = self._markdown_to_dom(self.description)
-		for node in content_nodes:
+		while len(content_nodes):
+			node = content_nodes[0]
 			root.appendChild(node)
 		doc.appendChild(root)
 		return doc
@@ -385,9 +404,10 @@ class Conclusion(ReportAssetSection):
 			todo = todo.parentNode
 
 		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
-		for node in self._markdown_to_dom(self.text):
+		nodes = self._markdown_to_dom(self.text)
+		while len(nodes):
+			node = nodes[0]
 			todo.parentNode.insertBefore(node, todo)
-			todo.parentNode.insertBefore(doc.createTextNode("\n"), todo)
 		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
 
 		# remove empty text node before the todo item
@@ -453,7 +473,9 @@ class FutureWork(ReportAssetSection):
 			_title = doc.createElement("b")
 			_title.appendChild(doc.createTextNode(item.title))
 			futurework_item.appendChild(_title)
-			for node in self._markdown_to_dom(item.description):
+			nodes = self._markdown_to_dom(item.description)
+			while len(nodes):
+				node = nodes[0]
 				futurework_item.appendChild(node)
 				futurework_item.appendChild(doc.createTextNode("\n"))
 			todo.parentNode.insertBefore(futurework_item, todo)
@@ -494,7 +516,8 @@ class ResultsInANutshell(ReportAssetSection):
 		root.appendChild(title)
 
 		section_nodes = self._markdown_to_dom(self.text)
-		for node in section_nodes:
+		while len(section_nodes):
+			node = section_nodes[0]
 			root.appendChild(node)
 
 		doc.appendChild(root)

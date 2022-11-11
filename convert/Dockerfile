@@ -9,6 +9,6 @@ RUN python3 -m pip install python-gitlab python-slugify
 # ADD scripts/gl2pentext_postprocess.py /scripts/gl2pentext_postprocess.py
 # ADD scripts/validate_report.py /scripts/validate_report.py
 
-ADD scripts/entrypoint.sh /scripts/entrypoint.sh
-ADD scripts/convert.py /scripts/convert.py
-ENTRYPOINT /scripts/entrypoint.sh
+ADD scripts/entrypoint.sh /entrypoint.sh
+ADD scripts/convert.py /convert.py
+ENTRYPOINT /entrypoint.sh
