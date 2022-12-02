@@ -19,6 +19,17 @@ to_csv()
 		-xi
 }
 
+to_html()
+{
+	DOC_TYPE="${1:-report}"
+	echo "Building ${TARGET_DIR}/${DOC_TYPE}_${PROJECT_NAME}.html"
+	java -jar /saxon.jar \
+		"-s:source/${DOC_TYPE}.xml" \
+		"-xsl:xslt/generate_html_report.xsl" \
+		"-o:${TARGET_DIR}/${DOC_TYPE}_${PROJECT_NAME}.html" \
+		-xi
+}
+
 to_fo()
 {
 	DOC_TYPE="${1:-report}"
@@ -49,6 +60,7 @@ to_pdf()
 if [ -f "source/report.xml" ]; then
 	to_pdf report
 	to_csv report
+	to_html report
 fi
 if [ -f "source/offerte.xml" ]; then
 	to_pdf offerte
