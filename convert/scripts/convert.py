@@ -472,6 +472,23 @@ class Finding(ProjectIssuePentextXMLFile):
 		doc.appendChild(root)
 		return doc
 
+	def __unwrap_single_paragraph_node(self, nodes) -> typing.List[xml.dom.minidom.Element]:
+		"""
+		Unwrap single paragraph DOM (e.g. <description><p>.*</p></description>).
+		"""
+		first_element_index = None
+		for index, node in enumerate(nodes):
+			if (node.nodeType == node.ELEMENT_NODE):
+				if first_element_index is None:
+					first_element_index = index
+				else:
+					# do nothing when multiple element nodes are found
+					return nodes
+		if first_element_index is not None:
+			unwrapped_nodes = nodes[first_element_index].childNodes
+			nodes[first_element_index:(first_element_index+1)] = unwrapped_nodes
+		return nodes
+
 	def _append_section(self, doc, parentNode, name, markdown_text=None, level=1):
 		section = xml.dom.minidom.Element(name)
 		if markdown_text is None:
@@ -479,8 +496,11 @@ class Finding(ProjectIssuePentextXMLFile):
 			# description is native value str
 			markdown_text = _value if isinstance(_value, str) else _value.markdown
 		section_nodes = markdown_to_dom(markdown_text, self.iid, level=level)
+		section_nodes = self.__unwrap_single_paragraph_node(section_nodes)
+
 		while len(section_nodes):
-			node = section_nodes[0]
+			node = section_nodes.pop(0)
+			node.parentNode = None
 			section.appendChild(node)
 		parentNode.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
 		parentNode.appendChild(section)
