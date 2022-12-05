@@ -51,6 +51,18 @@ GITLAB_SERVER_URL = os.environ.get(
 	"https://git.radicallyopensecurtity.com"
 )
 
+PENTEXT_CONVERT_COMMENT = "pentext-docker: convert"
+def has_pentext_convert_comment(
+	root: xml.dom.minidom.Element
+) -> typing.Tuple[int, int]:
+	"""Return True of an XML document has a pentext-convert comment."""
+	for node in root.childNodes:
+		if node.nodeType != node.COMMENT_NODE:
+			continue
+		if node.data == PENTEXT_CONVERT_COMMENT:
+			return True
+	return False
+
 if hasattr(xml.etree.ElementTree, "indent") is False:
 	logging.warning("Python XML/HTML indentation not supported")
 
@@ -606,6 +618,11 @@ class PentextXMLFileTodoSection(PentextXMLFileSection):
 		return self._doc
 
 	def replace_todo(self, doc):
+		if has_pentext_convert_comment(doc.documentElement) is True:
+			logging.debug(
+				f"{self.section_title} is already converted - skip replacing <todo/>"
+			)
+			return doc
 		todos = doc.documentElement.getElementsByTagName("todo")
 		if len(todos) == 0:
 			# skip when no <todo> element was found in XML
@@ -623,7 +640,7 @@ class PentextXMLFileTodoSection(PentextXMLFileSection):
 		if (before_todo is not None) and (before_todo.nodeType == doc.TEXT_NODE):
 			prefix = "\n" + before_todo.nodeValue.splitlines().pop()
 
-		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
+		todo.parentNode.insertBefore(doc.createComment(PENTEXT_CONVERT_COMMENT), todo)
 		todo.parentNode.insertBefore(doc.createTextNode(prefix), todo)
 		for node in self.getDOM(
 			wrapper_element=self.wrapper_element,
@@ -632,7 +649,7 @@ class PentextXMLFileTodoSection(PentextXMLFileSection):
 		):
 			todo.parentNode.insertBefore(node, todo)
 			todo.parentNode.insertBefore(doc.createTextNode(prefix), todo)
-		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
+		todo.parentNode.insertBefore(doc.createComment(PENTEXT_CONVERT_COMMENT), todo)
 
 		# remove empty text node before the todo item
 		prev = todo.previousSibling
