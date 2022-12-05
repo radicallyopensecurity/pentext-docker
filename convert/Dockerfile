@@ -9,6 +9,5 @@ RUN python3 -m pip install pypandoc python-gitlab python-slugify
 # ADD scripts/gl2pentext_postprocess.py /scripts/gl2pentext_postprocess.py
 # ADD scripts/validate_report.py /scripts/validate_report.py
 
-ADD scripts/entrypoint.sh /entrypoint.sh
-ADD scripts/convert.py /convert.py
-ENTRYPOINT /entrypoint.sh
+COPY scripts/ /scripts/
+ENTRYPOINT /scripts/entrypoint.sh

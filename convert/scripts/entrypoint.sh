@@ -3,7 +3,7 @@ cd "${CI_PROJECT_DIR}"
 
 set -e
 set -x
-python3 /convert.py
+python3 /scripts/convert.py
 
 ls -al findings/
 ls -al non-findings/
