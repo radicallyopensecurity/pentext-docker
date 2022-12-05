@@ -30,7 +30,11 @@ Convert pentest quotation into a report.
 
 Convert quickscope into a quotation.
 
-## Docker
+## Docker Compose
+
+### Use with caution
+
+🚨⚠️ **Security warning**: `GITLAB_TOKEN` will be accessible from the [convert](./convert/) container and your private EyeDP Cookie is not supposed to be shared or stored on disk. The [proxy](./proxy/) setup is a hack to separate the convert container from the Internet and local network and from the secret EyeDP Cookie, but must be used with caution. The credential will be built into the image and stored on disk. Only use on a host you fully trust and nobody else has access to.
 
 ```sh
 cp .env.sample .env
