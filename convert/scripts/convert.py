@@ -430,6 +430,7 @@ class Finding(ProjectIssuePentextXMLFile):
 
 	@property
 	def doc(self):
+		level = 1
 		doc = xml.dom.minidom.Document()
 
 		root = doc.createElement("finding");
@@ -442,6 +443,7 @@ class Finding(ProjectIssuePentextXMLFile):
 
 		title = doc.createElement("title");
 		title.appendChild(doc.createTextNode(self.title))
+		root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
 		root.appendChild(title)
 		root.appendChild(doc.createTextNode("\n"))
 
@@ -450,9 +452,12 @@ class Finding(ProjectIssuePentextXMLFile):
 			for item in self.labels:
 				label = doc.createElement("label")
 				label.appendChild(doc.createTextNode(item))
-				labels.appendChild(doc.createTextNode(f"\n{INDENT_CHARACTER}"))
+				labels.appendChild(
+					doc.createTextNode(f"\n{INDENT_CHARACTER * (level + 1)}")
+				)
 				labels.appendChild(label)
-			labels.appendChild(doc.createTextNode("\n"))
+			labels.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
+			root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
 			root.appendChild(labels)
 			root.appendChild(doc.createTextNode("\n"))
 
@@ -467,16 +472,17 @@ class Finding(ProjectIssuePentextXMLFile):
 		doc.appendChild(root)
 		return doc
 
-	def _append_section(self, doc, parentNode, name, markdown_text=None):
+	def _append_section(self, doc, parentNode, name, markdown_text=None, level=1):
 		section = xml.dom.minidom.Element(name)
 		if markdown_text is None:
 			_value = getattr(self, name)
 			# description is native value str
 			markdown_text = _value if isinstance(_value, str) else _value.markdown
-		section_nodes = markdown_to_dom(markdown_text, self.iid, level=0)
+		section_nodes = markdown_to_dom(markdown_text, self.iid, level=level)
 		while len(section_nodes):
 			node = section_nodes[0]
 			section.appendChild(node)
+		parentNode.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
 		parentNode.appendChild(section)
 		parentNode.appendChild(doc.createTextNode("\n"))
 
