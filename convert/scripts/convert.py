@@ -20,6 +20,7 @@ from slugify import slugify
 SKIP_EXISTING=(str(os.environ.get("SKIP_EXISTING", "1")) == "1")
 GITLAB_TOKEN=os.environ["PROJECT_ACCESS_TOKEN"]
 COOKIE = os.environ.get("COOKIE")
+INDENT_CHARACTER = "  "
 
 # Standard env variable for the base URL of the GitLab instance, including protocol and port
 # for example https://gitlab.example.org:8080
@@ -192,7 +193,7 @@ class ReportAsset:
 		).replace('\r\n', '\n')
 		htmlTree = xml.etree.ElementTree.fromstring(f"<root>{html}</root>")
 		if hasattr(xml.etree.ElementTree, "indent"):
-			xml.etree.ElementTree.indent(htmlTree, space="  ", level=0)
+			xml.etree.ElementTree.indent(htmlTree, space=INDENT_CHARACTER, level=0)
 		else:
 			logging.warning("Python indentation not supported")
 		dom = xml.dom.minidom.parseString(
@@ -283,8 +284,11 @@ class Finding(ReportAsset):
 			for item in self.labels:
 				label = doc.createElement("label")
 				label.appendChild(doc.createTextNode(item))
+				labels.appendChild(doc.createTextNode(f"\n{INDENT_CHARACTER}"))
 				labels.appendChild(label)
+			labels.appendChild(doc.createTextNode("\n"))
 			root.appendChild(labels)
+			root.appendChild(doc.createTextNode("\n"))
 
 		self.__append_section(doc, root, "description")
 		self.__append_section(doc, root, "technicaldescription")
