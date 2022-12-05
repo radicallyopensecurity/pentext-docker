@@ -7,6 +7,7 @@ import pathlib
 import xml.dom.minidom
 import xml.etree.ElementTree
 import urllib.request
+import requests
 
 import logging
 logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
@@ -17,20 +18,31 @@ from slugify import slugify
 
 SKIP_EXISTING=(str(os.environ.get("SKIP_EXISTING", "1")) == "1")
 GITLAB_TOKEN=os.environ["PROJECT_ACCESS_TOKEN"]
+COOKIE = os.environ.get("COOKIE")
 
 # Standard env variable for the base URL of the GitLab instance, including protocol and port
 # for example https://gitlab.example.org:8080
-GITLAB_SERVER_URL = os.environ.get("CI_SERVER_URL")
+GITLAB_SERVER_URL = os.environ.get(
+	"CI_SERVER_URL",
+	"https://git.radicallyopensecurtity.com"
+)
 
+session = requests.Session()
+session.headers["PRIVATE-TOKEN"] = GITLAB_TOKEN
+if COOKIE is not None:
+	session.headers["Cookie"] = COOKIE
 gitlab = Gitlab(
-  GITLAB_SERVER_URL,
+  url=GITLAB_SERVER_URL,
   private_token=GITLAB_TOKEN,
+  session=session,
   keep_base_url=True
 )
 gitlab.auth()
 
 opener = urllib.request.build_opener()
 opener.addheaders = [('PRIVATE-TOKEN', GITLAB_TOKEN)]
+if COOKIE is not None:
+	opener.addheaders.append(('COOKIE', COOKIE))
 urllib.request.install_opener(opener)
 
 pathlib.Path("uploads").mkdir(parents=True, exist_ok=True)
