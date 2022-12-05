@@ -8,6 +8,9 @@ import xml.dom.minidom
 import xml.etree.ElementTree
 import urllib.request
 
+import logging
+logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
+
 import pypandoc
 from gitlab import Gitlab
 from slugify import slugify
@@ -76,11 +79,11 @@ class Upload:
 
 	def download(self) -> None:
 		if os.path.exists(self.local_path) is True:
-			print(f"skip download {self.local_path} - file exists")
+			logging.info(f"skip download {self.local_path} - file exists")
 			return
 		dirname = os.path.dirname(self.local_path)
 		os.makedirs(dirname, exist_ok=True)
-		print(f"downloading {self.url} to {self.local_path}")
+		logging.info(f"downloading {self.url} to {self.local_path}")
 		urllib.request.urlretrieve(self.url, self.local_path)
 
 
@@ -178,7 +181,7 @@ class ReportAsset:
 		if hasattr(xml.etree.ElementTree, "indent"):
 			xml.etree.ElementTree.indent(htmlTree, space="  ", level=0)
 		else:
-			print("Warning: Python indentation not supported")
+			logging.warn("Python indentation not supported")
 		dom = xml.dom.minidom.parseString(
 			xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
 		)
@@ -191,7 +194,7 @@ class ReportAsset:
 		if path is None:
 			path = self.relative_path
 		with open(path, "w") as file:
-			print(f"writing {path}")
+			logging.info(f"writing {path}")
 			file.write(self.prettyxml)
 
 	@property
@@ -365,14 +368,14 @@ class ReportAssetSection(ReportAsset):
 
 	def write(self, dest=None):
 		if self.is_user_modified is False:
-			print(f"No {self.title} issue found - skipping {self.relative_path}")
+			logging.warn(f"No {self.title} issue found - skipping {self.relative_path}")
 			return
 		if dest is None:
 			dest = self.relative_path
 
 		xml_content = self.prettyxml
 		with open(dest, "w", encoding="UTF-8") as file:
-			print(f"writing {self.title} to {dest}")
+			logging.debug(f"writing {self.title} to {dest}")
 			file.write(xml_content)
 
 
@@ -389,7 +392,7 @@ class Conclusion(ReportAssetSection):
 	@property
 	def doc(self):
 		if self._doc is None:
-			print(f"Reading {self.title} from {self.relative_path}")
+			logging.info(f"Reading {self.title} from {self.relative_path}")
 			doc = xml.dom.minidom.parse(self.relative_path)
 			self._doc = self.replace_todo(doc)
 		return self._doc
@@ -450,7 +453,7 @@ class FutureWork(ReportAssetSection):
 	@property
 	def doc(self):
 		if self._doc is None:
-			print(f"Reading {self.title} from {self.relative_path}")
+			logging.info(f"Reading {self.title} from {self.relative_path}")
 			doc = xml.dom.minidom.parse(self.relative_path)
 			self._doc = self.replace_todo(doc)
 		return self._doc
@@ -546,7 +549,7 @@ class Report:
 		if dest is None:
 			dest = self.path
 		with open(dest, "w", encoding="UTF-8") as file:
-			print(f"writing report to {dest}")
+			logging.debug(f"writing report to {dest}")
 			file.write(self.doc.toxml())
 
 	def get_section(self, section_name):
@@ -568,7 +571,7 @@ class Report:
 		el.setAttribute("href", os.path.join("..", item.relative_path))
 		section = self.get_section(section_name)
 		if section is None:
-			print(
+			logging.warn(
 				f"A {section_name} section was not found in the XML file."
 				f" - {section_name} will not be included."
 			)
@@ -702,7 +705,7 @@ class ROSProject:
 		self.resultsinanutshell.write()
 		self.futurework.write()
 		self.report.write()
-		print("ROS Project written")
+		logging.info("ROS Project written")
 
 	def readFindingFromIssue(self, issue):
 		technicaldescription = ""
