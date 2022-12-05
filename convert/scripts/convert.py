@@ -368,7 +368,10 @@ class ReportAssetSection(ReportAsset):
 
 	def write(self, dest=None):
 		if self.is_user_modified is False:
-			logging.warning(f"No {self.title} issue found - skipping {self.relative_path}")
+			logging.warning(
+				f"No {self.title} issue found in GitLab Issues"
+				f" - skipping {self.relative_path}"
+			)
 			return
 		if dest is None:
 			dest = self.relative_path
