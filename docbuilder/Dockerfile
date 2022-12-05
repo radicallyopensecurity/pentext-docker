@@ -33,9 +33,9 @@ RUN apt-get upgrade -y
 RUN apt-get install -y fontconfig fonts-dejavu
 
 # add dummy fontconfig.properties to fix NPE -- https://github.com/AdoptOpenJDK/openjdk-build/issues/693
-ADD configs/fontconfig.properties /usr/lib/jvm/java-1.9-openjdk/jre/lib/fontconfig.properties
-ADD configs/rosfop.xconf /fop/conf/rosfop.xconf
-ADD fonts/* /fop/fonts/
-ADD scripts/build-document.sh /scripts/build-document.sh
+COPY configs/fontconfig.properties /usr/lib/jvm/java-1.9-openjdk/jre/lib/fontconfig.properties
+COPY configs/rosfop.xconf /fop/conf/rosfop.xconf
+COPY fonts/* /fop/fonts/
+COPY scripts/build-document.sh /scripts/build-document.sh
 
 ENTRYPOINT /scripts/build-document.sh
