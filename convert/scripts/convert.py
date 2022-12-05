@@ -612,9 +612,15 @@ class Report:
 
 class ROSProject:
 
-	def __init__(self, project_id: int, milestone: str) -> None:
+	def __init__(
+		self,
+		project_id: int,
+		milestone: typing.Optional[str]=None,
+		labels: typing.List[str]=[]
+	) -> None:
 		self.gitlab_project = gitlab.projects.get(project_id)
 		self.milestone = milestone
+		self.labels = labels
 		self.clearCache()
 		self.report = Report()
 
@@ -675,6 +681,8 @@ class ROSProject:
 		args = dict()
 		if self.milestone is not None:
 			args["milestone"] = self.milestone
+		if self.labels is not None:
+			args["labels"] = self.labels
 		return args
 
 	@property
@@ -830,6 +838,7 @@ class ROSProject:
 
 project = ROSProject(
 	project_id=os.environ["CI_PROJECT_ID"],
+	labels=os.environ.get("MATCH_LABELS"),
 	milestone=os.environ.get("MILESTONE")
 )
 project.write()
