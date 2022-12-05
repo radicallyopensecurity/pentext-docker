@@ -6,6 +6,7 @@ import os.path
 import pathlib
 import xml.dom.minidom
 import xml.etree.ElementTree
+import xml.parsers.expat
 import urllib.request
 import requests
 
@@ -241,7 +242,7 @@ class Finding(ReportAsset):
 		threatlevel: str="Unknown",
 		type: str="Unknown",
 		status: str="none",
-		labels: list=[],
+		labels: typing.List[str]=[],
 		project=None
 	) -> None:
 		super().__init__(
@@ -562,6 +563,7 @@ class Report:
 		self,
 		path: str="source/report.xml"
 	) -> None:
+		self._added_hrefs = []
 		self.path = path
 		self.doc = None
 		self.read()
@@ -587,13 +589,120 @@ class Report:
 
 	@property
 	def non_findings(self):
-		return self.get_section("non-findings")
+		return self.get_section("nonFindings")
+
+	# @staticmethod
+	# def findIncludeByHref(
+	# 	parent: xml.dom.minidom.Element,
+	# 	href: str
+	# ) -> typing.Optional[xml.dom.minidom.Element]:
+	# 	for include in parent.getElementsByTagName("xi:include"):
+	# 		if include.getAttribute("href") == href:
+	# 			return include
+
+	@staticmethod
+	def _is_include_element(node: typing.Any) -> bool:
+		if isinstance(node, xml.dom.minidom.Element) is False:
+			return False
+		elif node.tagName != "xi:include":
+			return False
+		elif node.hasAttribute("href") is False:
+			return False
+		return True
+
+	def _should_include_be_visible(
+		self,
+		node: xml.dom.minidom.Element
+	) -> typing.Optional[bool]:
+		if self._is_include_element(node) is False:
+			return None
+		return node.getAttribute("href").strip() in self._added_hrefs
+
+	def _get_include_by_href(
+		self,
+		section: xml.dom.minidom.Element,
+		href: str
+	) -> typing.Optional[typing.Union[
+		xml.dom.minidom.Comment,
+		xml.dom.minidom.Element
+	]]:
+		for node in section.childNodes:
+			if self._is_include_element(node):
+				if node.getAttribute("href") == href:
+					return node
+			if isinstance(node, xml.dom.minidom.Comment):
+				try:
+					include = xml.dom.minidom.parseString(node.nodeValue.strip())
+					if include.documentElement.getAttribute("href") == href:
+						return node
+				except xml.parsers.expat.ExpatError:
+					pass
+		return None
+
+	def _toggle_comment(
+		self,
+		element: xml.dom.minidom.Element,
+		visible: typing.Optional[bool]=None
+	) -> None:
+		parent = element.parentNode
+		if isinstance(element, xml.dom.minidom.Comment):
+			# comment out
+			if visible is False:
+				return # already commented out
+			root = xml.dom.minidom.parseString(element.nodeValue.strip())
+			node = root.documentElement
+			nodes = root.childNodes
+			while len(nodes):
+				node = nodes[0]
+				parent.insertBefore(node, element)
+			parent.removeChild(element)
+		elif self._is_include_element(element):
+			if visible is True:
+				return # should not be commented out
+			comment = element.toxml(encoding="UTF-8").decode("UTF-8")
+			parent.insertBefore(xml.dom.minidom.Comment(comment), element)
+			parent.removeChild(element)
+
+	def toggle_include_comments(
+		self,
+		section: typing.Optional[typing.List[xml.dom.minidom.Node]]=None
+	) -> None:
+
+		if section is None:
+			self.toggle_include_comments(self.get_section("findings"))
+			self.toggle_include_comments(self.get_section("nonFindings"))
+			return
+
+		for item in section.childNodes:
+			# check existing comments for items to comment in
+			if isinstance(item, xml.dom.minidom.Comment):
+				try:
+					parsed = xml.dom.minidom.parseString(item.nodeValue.strip())
+					if self._should_include_be_visible(parsed.documentElement) is True:
+						self._toggle_comment(item, visible=True)
+				except:
+					# ignore comments with invalid content
+					pass
+			elif self._is_include_element(item):
+				# check existing item and comment out if necessary
+				if self._should_include_be_visible(item) is not True:
+					self._toggle_comment(item, visible=False)
 
 	def add(self, section_name, item):
+
+		section = self.get_section(section_name)
+		href = os.path.join("..", item.relative_path)
+		self._added_hrefs.append(href)
+
+		existing_include = self._get_include_by_href(section, href)
+		if existing_include is not None:
+			self._toggle_comment(existing_include, visible=True)
+			return
+
 		el = self.doc.createElement("xi:include")
 		el.setAttribute("xmlns:xi", "http://www.w3.org/2001/XInclude")
-		el.setAttribute("href", os.path.join("..", item.relative_path))
-		section = self.get_section(section_name)
+		el.setAttribute("href", href)
+
 		if section is None:
 			logging.warning(
 				f"A {section_name} section was not found in the XML file."
@@ -647,7 +756,7 @@ class ROSProject:
 				self.readFindingFromIssue,
 				self.gitlab_project.issues.list(
 					state="opened",
-					labels=["finding"],
+					labels=["finding"] + self.labels,
 					iterator=True
 				)
 			))
@@ -666,7 +775,7 @@ class ROSProject:
 				),
 				self.gitlab_project.issues.list(
 					state="opened",
-					labels=["non-finding"],
+					labels=["non-finding"] + self.labels,
 					iterator=True
 				)
 			))
@@ -746,18 +855,17 @@ class ROSProject:
 
 	def write(self):
 		for finding in self.findings:
-			if finding.exists and SKIP_EXISTING:
-				continue
-			finding.write()
+			if not finding.exists or (SKIP_EXISTING is False):
+				finding.write()
 			self.report.add_finding(finding)
 		for non_finding in self.non_findings:
-			if non_finding.exists and SKIP_EXISTING:
-				continue
-			non_finding.write();
+			if not non_finding.exists or (SKIP_EXISTING is False):
+				non_finding.write();
 			self.report.add_non_finding(non_finding)
 		self.conclusion.write()
 		self.resultsinanutshell.write()
 		self.futurework.write()
+		self.report.toggle_include_comments()
 		self.report.write()
 		logging.info("ROS Project written")
 
@@ -838,7 +946,7 @@ class ROSProject:
 
 project = ROSProject(
 	project_id=os.environ["CI_PROJECT_ID"],
-	labels=os.environ.get("MATCH_LABELS"),
+	labels=os.environ.get("MATCH_LABELS", "").split(","),
 	milestone=os.environ.get("MILESTONE")
 )
 project.write()
