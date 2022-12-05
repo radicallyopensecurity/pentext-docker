@@ -847,7 +847,7 @@ class ROSProject:
 			self._futurework = FutureWork(
 				items=self.gitlab_project.issues.list(
 					state="opened",
-					labels=["future-work"]
+					labels=["future-work"] + self.labels
 				),
 				project=self
 			)
