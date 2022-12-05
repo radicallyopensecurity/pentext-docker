@@ -44,7 +44,7 @@ docker compose up -d
 ```sh
 export GITLAB_PROJECT_ID=1234
 export PENTEXT_DIR=/path/to/my-pentest
-docker compose run \
+docker compose run --rm \
 	-v "$PENTEXT_DIR:/pentext" \
 	-e CI_PROJECT_ID=$GITLAB_PROJECT_ID \
 	convert
