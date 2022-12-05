@@ -830,8 +830,10 @@ class ROSProject:
 				lambda issue: _simplify(issue.title) == _simplify(_section),
 				self.gitlab_project.issues.list(**args)
 			))
-			if len(issues) > 1:
-				raise Error(f"Multiple {_section} issues found on GitLab.")
+			if len(issues) == 0:
+				text = None
+			else:
+				text = "\n\n".join(list(map(lambda issue: issue.description, issues)))
 			text = issues[0].description if (len(issues) == 1) else None
 			self._resultsinanutshell = ResultsInANutshell(
 				text=text,
