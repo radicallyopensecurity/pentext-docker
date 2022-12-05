@@ -21,7 +21,8 @@ GITLAB_SERVER_URL = os.environ.get("CI_SERVER_URL")
 
 gitlab = Gitlab(
   GITLAB_SERVER_URL,
-  private_token=GITLAB_TOKEN
+  private_token=GITLAB_TOKEN,
+  keep_base_url=True
 )
 gitlab.auth()
 
@@ -45,8 +46,9 @@ upload_path_pattern = re.compile(
 
 class Upload:
 
-	def __init__(self, path) -> None:
+	def __init__(self, path, project=None) -> None:
 		self.path = path
+		self.project = project
 
 	@property
 	def path(self):
@@ -62,7 +64,10 @@ class Upload:
 
 	@property
 	def url(self):
-		project_url = os.environ["CI_PROJECT_URL"]
+		project_url = urllib.parse.urljoin(
+			gitlab._base_url,
+			self.project.gitlab_project.path_with_namespace
+		)
 		return f"{project_url}{self.path}"
 	
 	@property
@@ -112,7 +117,7 @@ class ReportAsset:
 		for image in images:
 			image_url = image.getAttribute("src");
 			try:
-				attachment = Upload(image_url)
+				attachment = Upload(image_url, project=self.project)
 				attachment.download()
 				image.setAttribute("src", f"../{attachment.local_path}")
 			except InvalidUploadPathException:

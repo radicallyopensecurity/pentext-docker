@@ -1,0 +1,66 @@
+version: "3.8"
+services:
+  convert:
+    build:
+      context: ./convert
+    profiles:
+      - convert
+    environment:
+      SKIP_EXISTING: true
+      PROJECT_ACCESS_TOKEN: ${GITLAB_TOKEN}
+      CI_SERVER_URL: "http://proxy"
+      CI_PROJECT_DIR: /pentext
+    #volumes:
+    #  - ${SOURCE_DIR}:/pentext
+    networks:
+      - default
+      - proxy
+  docbuilder:
+    build:
+      context: ./docbuilder
+    profiles:
+      - build
+    environment:
+      #CI_PROJECT_NAME: ${CI_PROJECT_NAME}
+      CI_PROJECT_DIR: /pentext
+    network_mode: none
+    working_dir: /pentext
+  off2rep:
+    build:
+      context: ./off2rep
+    profiles:
+      - manual
+    environment:
+      # CI_PROJECT_DIR: 
+      PROJECT_ACCESS_TOKEN: ${GITLAB_TOKEN}
+      CI_DEFAULT_BRANCH: main
+      GIT_USER_NAME: ${GITLAB_USER_NAME:-$GIT_USER_NAME}
+      GIT_USER_EMAIL: ${GITLAB_USER_EMAIL:-$GIT_USER_EMAIL}
+    networks:
+      - proxy
+  quickscope:
+    build:
+      context: ./quickscope
+    profiles:
+      - manual
+    environment:
+      # CI_PROJECT_PATH: 
+      CI_DEFAULT_BRANCH: main
+      CI_SERVER_HOST: "git.radicallyopensecurity.com"
+  proxy:
+    build:
+      context: ./proxy
+    expose:
+      - 80
+    ports:
+      - "127.0.0.1:80:80"
+    environment:
+      CI_SERVER_URL: "${CI_SERVER_URL}"
+      EXTRA_COOKIES: "${EXTRA_COOKIES}"
+    networks:
+      - default
+      - proxy
+networks:
+  proxy:
+    driver: bridge
+    internal: true

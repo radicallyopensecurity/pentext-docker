@@ -1,3 +1,4 @@
 KEYS
 env
+.env
 *.swp
