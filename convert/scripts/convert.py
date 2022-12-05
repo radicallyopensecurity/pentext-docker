@@ -241,6 +241,7 @@ class Finding(ReportAsset):
 		threatlevel: str="Unknown",
 		type: str="Unknown",
 		status: str="none",
+		labels: list=[],
 		project=None
 	) -> None:
 		super().__init__(
@@ -257,6 +258,7 @@ class Finding(ReportAsset):
 		self.threatlevel = threatlevel
 		self.type = type
 		self.status = status
+		self.labels = labels
 
 	@property
 	def doc(self):
@@ -275,11 +277,18 @@ class Finding(ReportAsset):
 		root.appendChild(title)
 		root.appendChild(doc.createTextNode("\n"))
 
+		if len(self.labels):
+			labels = doc.createElement("labels")
+			for item in self.labels:
+				label = doc.createElement("label")
+				label.appendChild(doc.createTextNode(item))
+				labels.appendChild(label)
+			root.appendChild(labels)
+
 		self.__append_section(doc, root, "description")
 		self.__append_section(doc, root, "technicaldescription")
 		self.__append_section(doc, root, "impact")
 		self.__append_section(doc, root, "recommendation")
-
 		for update in self.updates:
 			# there can be multiple update sections
 			self.__append_section(doc, root, "update", update)
@@ -592,6 +601,7 @@ class Report:
 			)
 		else:
 			section.appendChild(el)
+			section.appendChild(self.doc.createTextNode("\n"))
 
 	def add_finding(self, finding: Finding) -> None:
 		self.add("findings", finding)
@@ -792,11 +802,14 @@ class ROSProject:
 			elif (first_line.replace(" ", "") == "technicaldescription"):
 				technicaldescription = "\n".join(lines)
 
+		custom_labels = []
 		for label in issue.labels:
 			if label.lower().startswith("threatlevel:") is True:
 				threatlevel = label.split(":", maxsplit=1)[1]
-			if label.lower().startswith("reteststatus:") is True:
+			elif label.lower().startswith("reteststatus:") is True:
 				status = label.split(":", maxsplit=1)[1]
+			elif label not in ["finding"]:
+				custom_labels.append(label)
 
 		return Finding(
 			id=int(issue.id),
