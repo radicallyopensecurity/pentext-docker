@@ -604,7 +604,7 @@ class ROSProject:
 				self.gitlab_project.issues.list(
 					state="opened",
 					labels=["finding"],
-					as_list=False
+					iterator=True
 				)
 			))
 		return self._findings
@@ -623,7 +623,7 @@ class ROSProject:
 				self.gitlab_project.issues.list(
 					state="opened",
 					labels=["non-finding"],
-					as_list=False
+					iterator=True
 				)
 			))
 		return self._non_findings
@@ -717,7 +717,7 @@ class ROSProject:
 		updates = []
 
 		i = 0
-		for discussion in issue.discussions.list(as_list=False):
+		for discussion in issue.discussions.list(iterator=True):
 
 			notes = filter(
 				lambda note: note["system"] == False,
