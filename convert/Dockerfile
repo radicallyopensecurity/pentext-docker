@@ -1,9 +1,9 @@
-FROM pandoc/core:latest
+FROM ubuntu
 
-RUN apk add --update --no-cache python3 py3-pip
-RUN pip3 install pypandoc
+RUN apt-get update
+RUN apt-get install -y python3 python3-pip pandoc
 
-RUN python3 -m pip install python-gitlab python-slugify
+RUN python3 -m pip install pypandoc python-gitlab python-slugify
 
 # ADD scripts/gitlab_to_pentext.py /scripts/gitlab_to_pentext.py
 # ADD scripts/gl2pentext_postprocess.py /scripts/gl2pentext_postprocess.py
