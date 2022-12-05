@@ -590,14 +590,27 @@ class Report:
 
 class ROSProject:
 
-	def __init__(self, project_id: int) -> None:
+	def __init__(self, project_id: int, milestone: str) -> None:
 		self.gitlab_project = gitlab.projects.get(project_id)
+		self.milestone = milestone
+		self.clearCache()
+		self.report = Report()
+
+	def clearCache(self):
 		self._findings = None
 		self._non_findings = None
 		self._conclusion = None
 		self._resultsinanutshell = None
 		self._futurework = None
-		self.report = Report()
+
+	@property
+	def milestone(self):
+		return self._milestone
+
+	@milestone.setter
+	def milestone(self, value):
+		self._milestone = value
+		self.clearCache()
 
 	@property
 	def findings(self):
@@ -636,11 +649,18 @@ class ROSProject:
 		return text.lower().replace(" ", "")
 
 	@property
+	def __gitlab_args(self):
+		args = dict()
+		if self.milestone is not None:
+			args["milestone"] = self.milestone
+		return args
+
+	@property
 	def conclusion(self):
 		_section = "Conclusion"
 		_simplify = self.__permissive_user_input
 		if self._conclusion is None:
-			args = dict()
+			args = self.__gitlab_args
 			args["state"] = "opened"
 			args["search"] = _section
 			args["in"] = "title"
@@ -663,7 +683,7 @@ class ROSProject:
 		_section = "Results In A Nutshell"
 		_simplify = self.__permissive_user_input
 		if self._resultsinanutshell is None:
-			args = dict()
+			args = self.__gitlab_args
 			args["state"] = "opened"
 			args["search"] = _section
 			args["in"] = "title"
@@ -778,9 +798,13 @@ class ROSProject:
 			threatlevel=threatlevel,
 			type=type,
 			status=status,
+			labels=custom_labels,
 			project=self
 		)
 
 
-project = ROSProject(os.environ["CI_PROJECT_ID"])
+project = ROSProject(
+	project_id=os.environ["CI_PROJECT_ID"],
+	milestone=os.environ.get("MILESTONE")
+)
 project.write()
