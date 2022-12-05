@@ -725,6 +725,14 @@ class Report:
 
 class ROSProject:
 
+	DISCUSSION_KEYWORDS = [
+		"recommendation",
+		"impact",
+		"update",
+		"type",
+		"technicaldescription"
+	]
+
 	def __init__(
 		self,
 		project_id: int,
@@ -907,22 +915,15 @@ class ROSProject:
 
 			# other comments can have a meaning as well 
 			lines = comment.splitlines()
-			first_line = lines.pop(0).lower().strip().strip(":#")
+			first_line = lines.pop(0).lower().strip().strip(":#").replace(" ", "")
 
 			# remove leading empty lines
 			while len(lines) and lines[0].strip() == "":
 				lines.pop(0)
 
-			if first_line == "recommendation":
-				recommendation = "\n".join(lines).strip()
-			elif first_line == "impact":
-				impact = "\n".join(lines)
-			elif first_line == "update":
-				updates.append("\n".join(lines))
-			elif first_line == "type":
-				type = lines[0].strip()
-			elif (first_line.replace(" ", "") == "technicaldescription"):
-				technicaldescription = "\n".join(lines)
+			finding_kwargs = dict()
+			if first_line in self.DISCUSSION_KEYWORDS:
+				finding_kwargs[first_line] = "\n".join(lines).strip()
 
 		custom_labels = []
 		for label in issue.labels:
