@@ -181,7 +181,7 @@ class ReportAsset:
 		if hasattr(xml.etree.ElementTree, "indent"):
 			xml.etree.ElementTree.indent(htmlTree, space="  ", level=0)
 		else:
-			logging.warn("Python indentation not supported")
+			logging.warning("Python indentation not supported")
 		dom = xml.dom.minidom.parseString(
 			xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
 		)
@@ -368,7 +368,7 @@ class ReportAssetSection(ReportAsset):
 
 	def write(self, dest=None):
 		if self.is_user_modified is False:
-			logging.warn(f"No {self.title} issue found - skipping {self.relative_path}")
+			logging.warning(f"No {self.title} issue found - skipping {self.relative_path}")
 			return
 		if dest is None:
 			dest = self.relative_path
@@ -571,7 +571,7 @@ class Report:
 		el.setAttribute("href", os.path.join("..", item.relative_path))
 		section = self.get_section(section_name)
 		if section is None:
-			logging.warn(
+			logging.warning(
 				f"A {section_name} section was not found in the XML file."
 				f" - {section_name} will not be included."
 			)
