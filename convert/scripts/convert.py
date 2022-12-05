@@ -260,7 +260,7 @@ class ProjectIssuePentextSection(gitlab.v4.objects.issues.ProjectIssue):
 	@property
 	def extra_labels(self) -> typing.List[str]:
 		"""Return GitLab Issue labels that are not associated with Pentext."""
-		return [label for label in this.labels if not _is_pentext_label(label)]
+		return [label for label in self.labels if not _is_pentext_label(label)]
 
 
 class ProjectIssuePentextXMLFile(
@@ -449,7 +449,7 @@ class Finding(ProjectIssuePentextXMLFile):
 
 		if len(self.labels):
 			labels = doc.createElement("labels")
-			for item in self.labels:
+			for item in self.extra_labels:
 				label = doc.createElement("label")
 				label.appendChild(doc.createTextNode(item))
 				labels.appendChild(
