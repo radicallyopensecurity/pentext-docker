@@ -18,6 +18,24 @@ docker build --tag <package>:1.0 <any-build-args> .
 
 Pre-process `.xml` files, performing conversions and formatting where necessary.
 
+#### ENV: `MERGE_STRATEGY`
+
+When a finding XML file already exists, the following strategies can be used to update XML data from GitLab Issues:
+
+- `RETEST`: Update finding `status` and `<update>` tags
+- `META`: Update finding `id`, `threatLevel`, `type` and `status`
+- `LABELS`:
+- `TITLE`:
+- `DESCRIPTION`
+- `TECHNICALDESCRIPTION`
+- `RECOMMENDATION`
+- `IMPACT`
+
+```sh
+# only update retest results and finding meta-data
+MERGE_STRATEGY="RETEST|META"
+```
+
 ### [`/docbuilder`](/docbuilder/)
 
 Generate `pdf|fo|csv` files from `xml` files according to appropriate `xslt`.

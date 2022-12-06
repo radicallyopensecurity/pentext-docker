@@ -4,6 +4,9 @@ import re
 import os
 import os.path
 import pathlib
+import enum
+import argparse
+import functools
 import xml.dom.minidom
 import xml.etree.ElementTree
 import xml.parsers.expat
@@ -20,6 +23,28 @@ import gitlab.client
 import gitlab.base
 import gitlab.v4.objects.issues
 import gitlab.v4.objects.notes
+
+class FindingMergeStrategy(enum.IntFlag):
+	RETEST = enum.auto() # <update> and finding status attribute
+	META = enum.auto() # threatLevel, type, status
+	LABELS = enum.auto()
+	TITLE = enum.auto()
+	DESCRIPTION = enum.auto()
+	TECHNICALDESCRIPTION = enum.auto()
+	RECOMMENDATION = enum.auto()
+	IMPACT = enum.auto()
+
+	def __str__(self):
+		return self.name
+
+	@staticmethod
+	def parse_argument(value: str):
+		_value = value.upper().strip("\"'")
+		return functools.reduce(
+			lambda i, k: i | k,
+			[FindingMergeStrategy[flag.strip()] for flag in _value.split(",")],
+			FindingMergeStrategy(0)
+		)
 
 def _truthy(value: typing.Union[str, int], default: bool=False) -> bool:
 	_value = str(value).lower()
@@ -43,6 +68,17 @@ LABELS = list(filter(
 	lambda x: len(x),
 	os.environ.get("MATCH_LABELS", "").split(",")
 ))
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+	'--merge-strategy',
+	type=FindingMergeStrategy.parse_argument,
+	metavar=[strategy.name for strategy in FindingMergeStrategy],
+	default=(FindingMergeStrategy.META | FindingMergeStrategy.RETEST | FindingMergeStrategy.LABELS),
+	required=True,
+	help="Finding merge strategy when XML file exists"
+)
+options = parser.parse_args()
 
 # Standard env variable for the base URL of the GitLab instance,
 # including protocol and port (for example https://gitlab.example.org:8080)
@@ -220,10 +256,15 @@ class PentextXMLFile:
 		pentext_project=None,
 	) -> None:
 		self.pentext_project = pentext_project
+		if self.exists:
+			self.read()
+		else:
+			self._doc = None
 
 	@property
 	def doc(self):
-		raise NotImplementedError()
+		"""Existing file XML dom."""
+		return self._doc
 
 	@property
 	def processed_doc(self):
@@ -241,14 +282,15 @@ class PentextXMLFile:
 		return doc
 
 	def read(self):
-		self.doc = xml.dom.minidom.parse(self.relative_path)
+		if not self.exists:
+			raise Exception(f"File {self.relative_path} does not exist")
+		logging.info(f"parsing {self.relative_path}")
+		self._doc = xml.dom.minidom.parse(self.relative_path)
 
-	def write(self, path=None) -> None:
-		if path is None:
-			path = self.relative_path
+	def write(self) -> None:
 		prettyxml = to_prettyxml(self.processed_doc)
-		with open(path, "w", encoding="UTF-8") as file:
-			logging.info(f"writing {path}")
+		with open(self.relative_path, "w", encoding="UTF-8") as file:
+			logging.info(f"writing {self.relative_path}")
 			file.write(prettyxml)
 
 	@property
@@ -265,7 +307,7 @@ class PentextXMLFile:
 
 class ProjectIssuePentextSection(gitlab.v4.objects.issues.ProjectIssue):
 	"""
-	Pentext section GitLab 
+	Pentext section GitLab.
 	"""
 	__module__ = "gitlab.v4.objects.issues"
 
@@ -290,6 +332,7 @@ class ProjectIssuePentextXMLFile(
 	def __init__(self, *args, pentext_project, **kwargs) -> None:
 		gitlab.v4.objects.issues.ProjectIssue.__init__(self, *args, **kwargs)
 		PentextXMLFile.__init__(self, pentext_project=pentext_project)
+		self.existing_doc = None
 
 	@property
 	def slug(self):
@@ -353,12 +396,12 @@ class Finding(ProjectIssuePentextXMLFile):
 	"""
 	Pentext finding XML structure associated with a GitLab Issue.
 	"""
-
 	__module__ = "gitlab.v4.objects.issues"
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
 		self._pentext_notes = None
+		self.strategy = options.merge_strategy
 
 	@property
 	def pentext_notes(self):
@@ -366,10 +409,6 @@ class Finding(ProjectIssuePentextXMLFile):
 			self._pentext_notes = []
 			_obj_cls = self.notes._obj_cls
 			self.notes._obj_cls = FindingIssueNote
-			# self.notes._obj_cls = curry_project_obj_cls(
-			# 	FindingIssueNote,
-			# 	pentext_project=self.pentext_project
-			# )
 			first_note = None
 			has_technical_description = False
 			for note in self.notes.list(
@@ -440,49 +479,75 @@ class Finding(ProjectIssuePentextXMLFile):
 			if note.keyword == note_type:
 				yield note
 
+	@staticmethod
+	def get_dom_section(root, tagName) -> xml.dom.minidom.Element:
+		for node in root.childNodes:
+			if node.nodeType == node.ELEMENT_NODE and node.tagName == tagName:
+				return node
+
 	@property
 	def doc(self):
 		level = 1
-		doc = xml.dom.minidom.Document()
+		exists = self._doc is not None
+		if exists:
+			doc = self._doc
+			root = doc.documentElement
+		else:
+			doc = xml.dom.minidom.Document()
+			root = doc.createElement("finding")
+			root.appendChild(doc.createTextNode("\n"))
+			doc.appendChild(root)			
 
-		root = doc.createElement("finding");
-		root.setAttribute("id", self.slug)
-		root.setAttribute("number", str(self.iid))
-		root.setAttribute("threatLevel", str(self.threatlevel))
-		root.setAttribute("type", str(self.type))
-		root.setAttribute("status", self.status)
-		root.appendChild(doc.createTextNode("\n"))
+		if not exists or (FindingMergeStrategy.META in self.strategy):
+			root.setAttribute("id", self.slug)
+			root.setAttribute("number", str(self.iid))
+			root.setAttribute("threatLevel", str(self.threatlevel))
+			root.setAttribute("type", str(self.type))
+		if not exists or ((FindingMergeStrategy.META & FindingMergeStrategy.RETEST) in self.strategy):
+			root.setAttribute("status", self.status)
 
-		title = doc.createElement("title");
-		title.appendChild(doc.createTextNode(self.title))
-		root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
-		root.appendChild(title)
-		root.appendChild(doc.createTextNode("\n"))
+		title = self.get_dom_section(root, "title")
+		if not exists or (FindingMergeStrategy.TITLE in self.strategy):
+			if title is None:
+				title = doc.createElement("title")
+				root.appendChild(title)
+				root.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
+			while title.hasChildNodes():
+				title.removeChild(title.firstChild)
+			title.appendChild(doc.createTextNode(self.title))
 
-		if len(self.labels):
-			labels = doc.createElement("labels")
-			for item in self.extra_labels:
+		labels = self.get_dom_section(root, "labels")
+		if not exists or (FindingMergeStrategy.LABELS in self.strategy):
+			if labels is None:
+				labels = doc.createElement("labels")
+				root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
+				root.appendChild(labels)
+				root.appendChild(doc.createTextNode("\n"))
+			while labels.hasChildNodes():
+				labels.removeChild(labels.firstChild)
+			for label_title in self.extra_labels:
 				label = doc.createElement("label")
-				label.appendChild(doc.createTextNode(item))
+				label.appendChild(doc.createTextNode(label_title))
 				labels.appendChild(
 					doc.createTextNode(f"\n{INDENT_CHARACTER * (level + 1)}")
 				)
 				labels.appendChild(label)
-			labels.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
-			root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
-			root.appendChild(labels)
-			root.appendChild(doc.createTextNode("\n"))
+			if len(self.extra_labels):
+				labels.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
 
-		self._append_section(doc, root, "description")
-		self._append_section(doc, root, "technicaldescription")
-		self._append_section(doc, root, "impact")
-		self._append_section(doc, root, "recommendation")
+		self._append_section(doc, root, "description", FindingMergeStrategy.DESCRIPTION)
+		self._append_section(doc, root, "technicaldescription", FindingMergeStrategy.TECHNICALDESCRIPTION)
+		self._append_section(doc, root, "impact", FindingMergeStrategy.IMPACT)
+		self._append_section(doc, root, "recommendation", FindingMergeStrategy.RECOMMENDATION)
 		for update in self.updates:
 			# there can be multiple update sections
-			self._append_section(doc, root, "update", update)
+			self._append_section(doc, root, "update", FindingMergeStrategy.RETEST, update)
 
-		doc.appendChild(root)
 		return doc
+
+	@doc.setter
+	def doc(self, value) -> None:
+		self._dom = value
 
 	def __unwrap_single_paragraph_node(self, nodes) -> typing.List[xml.dom.minidom.Element]:
 		"""
@@ -501,8 +566,28 @@ class Finding(ProjectIssuePentextXMLFile):
 			nodes[first_element_index:(first_element_index+1)] = unwrapped_nodes
 		return nodes
 
-	def _append_section(self, doc, parentNode, name, markdown_text=None, level=1):
-		section = xml.dom.minidom.Element(name)
+	def _append_section(
+		self,
+		doc,
+		parentNode,
+		name,
+		update_strategy,
+		markdown_text=None,
+		level=1
+	) -> None:
+		section = self.get_dom_section(parentNode, name)
+		if section is None:
+			section = xml.dom.minidom.Element(name)
+			parentNode.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
+			parentNode.appendChild(section)
+			parentNode.appendChild(doc.createTextNode("\n"))
+		elif update_strategy not in self.strategy:
+			logging.debug(f"Finding section {name} exists but skipped because update strategy {update_strategy} is not enabled")
+			return
+		else:
+			while section.hasChildNodes():
+				section.removeChild(section.firstChild)
+
 		if markdown_text is None:
 			_value = getattr(self, name)
 			# description is native value str
@@ -514,9 +599,6 @@ class Finding(ProjectIssuePentextXMLFile):
 			node = section_nodes.pop(0)
 			node.parentNode = None
 			section.appendChild(node)
-		parentNode.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
-		parentNode.appendChild(section)
-		parentNode.appendChild(doc.createTextNode("\n"))
 
 	@property
 	def relative_path(self):
