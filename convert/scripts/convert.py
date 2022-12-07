@@ -305,6 +305,7 @@ class PentextXMLFile:
 	def filename(self):
 		raise NotImplementedError()
 
+
 class ProjectIssuePentextSection(gitlab.v4.objects.issues.ProjectIssue):
 	"""
 	Pentext section GitLab.
@@ -961,6 +962,45 @@ class Report(PentextXMLFile):
 	def add_non_finding(self, non_finding: NonFinding) -> None:
 		self.add("nonFindings", non_finding)
 
+	def update_labels(self, labels) -> None:
+		meta_elements = self.doc.documentElement.getElementsByTagName("meta")
+		if len(meta_elements) == 0:
+			raise Exception("Report XML file misses <meta/> element")
+		meta_element = meta_elements[0]
+
+		# get meta indent level
+		indent_level = 3
+		before_meta = meta_element.previousSibling
+		if (before_meta is None) or (before_meta.nodeType == before_meta.TEXT_NODE):
+			_indent_character = before_meta.nodeValue.splitlines().pop()
+		else:
+			_indent_character = INDENT_CHARACTER
+
+		labels_elements = meta_element.getElementsByTagName("labels")
+		if len(labels_elements) == 0:
+			labels_element = self.doc.createElement("labels")
+			meta_element.appendChild(self.doc.createTextNode(_indent_character))
+			meta_element.appendChild(labels_element)
+			meta_element.appendChild(self.doc.createTextNode("\n" + (_indent_character * (indent_level-2))))
+		else:
+			labels_element = labels_elements[0]
+		while labels_element.hasChildNodes():
+			labels_element.removeChild(labels_element.firstChild)
+		if len(labels) > 0:
+			labels_element.appendChild(self.doc.createTextNode("\n" + (_indent_character * (indent_level-1))))
+			for label in labels:
+				if not label.is_project_label:
+					continue
+				label_element = self.doc.createElement("label")
+				label_element.setAttribute("name", label.name)
+				label_element.setAttribute("color", label.color)
+				label_element.setAttribute("text", label.text_color)
+				if label.description is not None:
+					label_element.appendChild(self.doc.createTextNode(label.description))
+				labels_element.appendChild(self.doc.createTextNode(_indent_character))
+				labels_element.appendChild(label_element)
+				labels_element.appendChild(self.doc.createTextNode("\n" + (_indent_character * (indent_level-1))))
+
 
 class PentextProject(gitlab.v4.objects.projects.Project):
 
@@ -1070,6 +1110,8 @@ class PentextProject(gitlab.v4.objects.projects.Project):
 		self.resultsinanutshell.write()
 		self.futurework.write()
 		self.report.toggle_include_comments()
+		if (FindingMergeStrategy.LABELS in options.merge_strategy):
+			self.report.update_labels(self.labels.list(iterator=True))
 		self.report.write()
 		logging.info("ROS Project written")
 
