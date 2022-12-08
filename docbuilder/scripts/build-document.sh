@@ -21,6 +21,20 @@ to_csv()
 		-xi
 }
 
+to_jira()
+{
+	if [ ! -f "xslt/findings2jira.xsl" ]; then
+		echo "Warning: findings2jira transformation does not exist. Build is skipped."
+	fi
+	DOC_TYPE="${1:-report}"
+	echo "Building ${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}_jira.csv"
+	java -jar /saxon.jar \
+		"-s:source/${DOC_TYPE}.xml" \
+		"-xsl:xslt/findings2jira.xsl" \
+		"-o:${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}_jira.csv" \
+		-xi
+}
+
 to_fo()
 {
 	DOC_TYPE="${1:-report}"
@@ -51,6 +65,7 @@ to_pdf()
 if [ -f "source/report.xml" ]; then
 	to_pdf report
 	to_csv report
+	to_jira report
 fi
 if [ -f "source/offerte.xml" ]; then
 	to_pdf offerte
