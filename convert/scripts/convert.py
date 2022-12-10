@@ -563,9 +563,7 @@ class Finding(ProjectIssuePentextXMLFile):
 					# do nothing when multiple element nodes are found
 					return nodes
 		if first_element_index is not None:
-			unwrapped_nodes = nodes[first_element_index].childNodes
-			nodes[first_element_index:(first_element_index+1)] = unwrapped_nodes
-		return nodes
+			return nodes[first_element_index].childNodes
 
 	def _append_section(
 		self,
