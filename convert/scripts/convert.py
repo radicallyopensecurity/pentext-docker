@@ -179,8 +179,8 @@ def markdown(
 	).replace('\r\n', '\n')
 
 	# post-processing
-	html = _fix_code_blocks(html)
 	html = _indent_html(html, level)
+	html = _fix_code_blocks(html)
 
 	return html
 
