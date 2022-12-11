@@ -576,7 +576,7 @@ class Finding(ProjectIssuePentextXMLFile):
 	) -> None:
 		section = self.get_dom_section(parentNode, name)
 		if section is None:
-			section = xml.dom.minidom.Element(name)
+			section = doc.createElement(name)
 			parentNode.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
 			parentNode.appendChild(section)
 			parentNode.appendChild(doc.createTextNode("\n"))
