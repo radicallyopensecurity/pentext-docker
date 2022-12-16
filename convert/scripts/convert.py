@@ -539,7 +539,7 @@ class Finding(ProjectIssuePentextXMLFile):
 		self._append_section(doc, root, "description", FindingMergeStrategy.DESCRIPTION)
 		self._append_section(doc, root, "technicaldescription", FindingMergeStrategy.TECHNICALDESCRIPTION)
 		self._append_section(doc, root, "impact", FindingMergeStrategy.IMPACT)
-		self._append_section(doc, root, "recommendation", FindingMergeStrategy.RECOMMENDATION)
+		self._append_section(doc, root, "recommendation", FindingMergeStrategy.RECOMMENDATION, unwrap=False)
 		for update in self.updates:
 			# there can be multiple update sections
 			self._append_section(doc, root, "update", FindingMergeStrategy.RETEST, update)
@@ -572,7 +572,8 @@ class Finding(ProjectIssuePentextXMLFile):
 		name,
 		update_strategy,
 		markdown_text=None,
-		level=1
+		level=1,
+		unwrap=True
 	) -> None:
 		section = self.get_dom_section(parentNode, name)
 		if section is None:
@@ -592,7 +593,8 @@ class Finding(ProjectIssuePentextXMLFile):
 			# description is native value str
 			markdown_text = _value if isinstance(_value, str) else _value.markdown
 		section_nodes = markdown_to_dom(markdown_text, self.iid, level=level)
-		section_nodes = self.__unwrap_single_paragraph_node(section_nodes)
+		if unwrap is True:
+			section_nodes = self.__unwrap_single_paragraph_node(section_nodes)
 
 		while len(section_nodes):
 			node = section_nodes.pop(0)
