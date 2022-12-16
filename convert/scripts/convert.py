@@ -563,7 +563,11 @@ class Finding(ProjectIssuePentextXMLFile):
 					# do nothing when multiple element nodes are found
 					return nodes
 		if first_element_index is not None:
+			exclusions = ["ul"]
+			if nodes[first_element_index].tagName in exclusions:
+				return nodes
 			return nodes[first_element_index].childNodes
+		return nodes
 
 	def _append_section(
 		self,
