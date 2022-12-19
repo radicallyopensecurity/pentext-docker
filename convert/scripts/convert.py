@@ -511,8 +511,9 @@ class Finding(ProjectIssuePentextXMLFile):
 		if not exists or (FindingMergeStrategy.TITLE in self.strategy):
 			if title is None:
 				title = doc.createElement("title")
+				root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
 				root.appendChild(title)
-				root.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
+				root.appendChild(doc.createTextNode("\n"))
 			while title.hasChildNodes():
 				title.removeChild(title.firstChild)
 			title.appendChild(doc.createTextNode(self.title))
