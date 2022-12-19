@@ -518,6 +518,14 @@ class Finding(ProjectIssuePentextXMLFile):
 				title.removeChild(title.firstChild)
 			title.appendChild(doc.createTextNode(self.title))
 
+		self._append_section(doc, root, "description", FindingMergeStrategy.DESCRIPTION)
+		self._append_section(doc, root, "technicaldescription", FindingMergeStrategy.TECHNICALDESCRIPTION)
+		self._append_section(doc, root, "impact", FindingMergeStrategy.IMPACT)
+		self._append_section(doc, root, "recommendation", FindingMergeStrategy.RECOMMENDATION, unwrap=False)
+		for update in self.updates:
+			# there can be multiple update sections
+			self._append_section(doc, root, "update", FindingMergeStrategy.RETEST, update)
+
 		labels = self.get_dom_section(root, "labels")
 		if not exists or (FindingMergeStrategy.LABELS in self.strategy):
 			if labels is None:
@@ -536,14 +544,6 @@ class Finding(ProjectIssuePentextXMLFile):
 				labels.appendChild(label)
 			if len(self.extra_labels):
 				labels.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
-
-		self._append_section(doc, root, "description", FindingMergeStrategy.DESCRIPTION)
-		self._append_section(doc, root, "technicaldescription", FindingMergeStrategy.TECHNICALDESCRIPTION)
-		self._append_section(doc, root, "impact", FindingMergeStrategy.IMPACT)
-		self._append_section(doc, root, "recommendation", FindingMergeStrategy.RECOMMENDATION, unwrap=False)
-		for update in self.updates:
-			# there can be multiple update sections
-			self._append_section(doc, root, "update", FindingMergeStrategy.RETEST, update)
 
 		return doc
 
