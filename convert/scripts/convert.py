@@ -256,14 +256,13 @@ class PentextXMLFile:
 		pentext_project=None,
 	) -> None:
 		self.pentext_project = pentext_project
-		if self.exists:
-			self.read()
-		else:
-			self._doc = None
+		self._doc = None
 
 	@property
 	def doc(self):
 		"""Existing file XML dom."""
+		if (self._doc is None) and self.exists:
+			self.read()
 		return self._doc
 
 	@property
@@ -489,15 +488,17 @@ class Finding(ProjectIssuePentextXMLFile):
 	@property
 	def doc(self):
 		level = 1
-		exists = self._doc is not None
-		if exists:
+		exists = self.exists
+		if exists is True:
+			if self._doc is None:
+				self.read()
 			doc = self._doc
 			root = doc.documentElement
 		else:
 			doc = xml.dom.minidom.Document()
 			root = doc.createElement("finding")
 			root.appendChild(doc.createTextNode("\n"))
-			doc.appendChild(root)			
+			doc.appendChild(root)
 
 		if not exists or (FindingMergeStrategy.META in self.strategy):
 			root.setAttribute("id", self.slug)
