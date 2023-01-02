@@ -940,16 +940,21 @@ class Report(PentextXMLFile):
 
 	def add(self, section_name, item):
 
+		doc = self.doc
 		section = self.get_section(section_name)
 		href = os.path.join("..", item.relative_path)
 		self._added_hrefs.append(href)
+
+		line_prefix = "\n"
+		if (section.firstChild.nodeType == doc.TEXT_NODE):
+			line_prefix = section.firstChild.nodeValue
 
 		existing_include = self._get_include_by_href(section, href)
 		if existing_include is not None:
 			self._toggle_comment(existing_include, visible=True)
 			return
 
-		el = self.doc.createElement("xi:include")
+		el = doc.createElement("xi:include")
 		el.setAttribute("xmlns:xi", "http://www.w3.org/2001/XInclude")
 		el.setAttribute("href", href)
 
@@ -959,8 +964,14 @@ class Report(PentextXMLFile):
 				f" - {section_name} will not be included."
 			)
 		else:
-			section.appendChild(el)
-			section.appendChild(self.doc.createTextNode("\n"))
+			_line_prefix = self.doc.createTextNode(line_prefix)
+			if (section.lastChild.nodeType == doc.TEXT_NODE):
+				section.insertBefore(_line_prefix, section.lastChild)
+				section.insertBefore(el, section.lastChild)
+			else:
+				# append as last element else
+				section.appendChild(_line_prefix)
+				section.appendChild(el)
 
 	def add_finding(self, finding: Finding) -> None:
 		self.add("findings", finding)
