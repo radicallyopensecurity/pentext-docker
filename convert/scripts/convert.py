@@ -670,7 +670,7 @@ class PentextXMLFileTodoSection(PentextXMLFileSection):
   A source file is read (e.g. source/conclusion.xml) and content from GitLab
   Issues is replacing the <todo/> note.
 
-	  <wrapper id="gitlan/project/[0-9]+/issues/[0-9]+/">
+	  <wrapper id="gitlab/project/[0-9]+/issues/[0-9]+/">
 			<title optional/>
 			<markdown_description/>
 	  </wrapper>
