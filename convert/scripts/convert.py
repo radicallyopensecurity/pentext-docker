@@ -963,15 +963,16 @@ class Report(PentextXMLFile):
 				f"A {section_name} section was not found in the XML file."
 				f" - {section_name} will not be included."
 			)
+			return
+
+		_line_prefix = self.doc.createTextNode(line_prefix)
+		if (section.lastChild.nodeType == doc.TEXT_NODE):
+			section.insertBefore(_line_prefix, section.lastChild)
+			section.insertBefore(el, section.lastChild)
 		else:
-			_line_prefix = self.doc.createTextNode(line_prefix)
-			if (section.lastChild.nodeType == doc.TEXT_NODE):
-				section.insertBefore(_line_prefix, section.lastChild)
-				section.insertBefore(el, section.lastChild)
-			else:
-				# append as last element else
-				section.appendChild(_line_prefix)
-				section.appendChild(el)
+			# append as last element else
+			section.appendChild(_line_prefix)
+			section.appendChild(el)
 
 	def add_finding(self, finding: Finding) -> None:
 		self.add("findings", finding)
