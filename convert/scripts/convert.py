@@ -24,6 +24,23 @@ import gitlab.base
 import gitlab.v4.objects.issues
 import gitlab.v4.objects.notes
 
+class ThreatLevels(enum.IntEnum):
+	UNKNOWN = 0
+	LOW = 1
+	MODERATE = 2
+	ELEVATED = 3
+	HIGH = 4
+	EXTREME = 5
+
+def get_threat_level_number(threatLevel: typing.Optional[str]) -> int:
+	if (threatLevel is None):
+		return ThreatLevels.UNKNOWN
+	_threatLevel =threatLevel.upper()
+	if (_threatLevel not in ThreatLevels._member_names_):
+		return ThreatLevels.UNKNOWN
+	return ThreatLevels[_threatLevel].value
+
+
 class FindingMergeStrategy(enum.IntFlag):
 	RETEST = enum.auto() # <update> and finding status attribute
 	META = enum.auto() # threatLevel, type, status
@@ -1116,7 +1133,12 @@ class PentextProject(gitlab.v4.objects.projects.Project):
 		return self.get_report_section_by_labels(["future-work"], FutureWork)
 
 	def write(self):
-		for finding in self.findings:
+		findings_by_severity = sorted(
+			self.findings,
+			key=lambda finding: get_threat_level_number(finding.threatlevel),
+			reverse=True
+		)
+		for finding in findings_by_severity:
 			if not finding.exists or (SKIP_EXISTING is False):
 				finding.write()
 			self.report.add_finding(finding)
