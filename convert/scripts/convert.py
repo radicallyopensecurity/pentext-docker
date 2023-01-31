@@ -57,11 +57,14 @@ class FindingMergeStrategy(enum.IntFlag):
 	@staticmethod
 	def parse_argument(value: str):
 		_value = value.upper().strip("\"'")
+		if (_value == "*"):
+			_value = ",".join([flag.name for flag in FindingMergeStrategy])
 		return functools.reduce(
 			lambda i, k: i | k,
 			[FindingMergeStrategy[flag.strip()] for flag in _value.split(",")],
 			FindingMergeStrategy(0)
 		)
+
 
 def _truthy(value: typing.Union[str, int], default: bool=False) -> bool:
 	_value = str(value).lower()
@@ -90,9 +93,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
 	'--merge-strategy',
 	type=FindingMergeStrategy.parse_argument,
-	metavar=[strategy.name for strategy in FindingMergeStrategy],
-	default=(FindingMergeStrategy.META | FindingMergeStrategy.RETEST | FindingMergeStrategy.LABELS),
-	required=True,
+	metavar=["*"] + [strategy.name for strategy in FindingMergeStrategy],
+	default="*",
+	required=False,
 	help="Finding merge strategy when XML file exists"
 )
 options = parser.parse_args()
