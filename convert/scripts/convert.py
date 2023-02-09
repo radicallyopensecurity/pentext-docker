@@ -156,6 +156,8 @@ def to_prettyxml(doc):
 	output = doc.toxml(encoding="UTF-8").decode("UTF-8")
 	# force newline after XML declaration
 	output = re.sub(r"^(<\?xml[^>\n]*>)", r"\1\n", output, count=1)
+	# end file with newline
+	output = re.sub(r"\n*$", "\n", output)
 	return output
 
 _p_pre_code_open = re.compile(r"<pre>[\s\r\n]*<code>[\s\r\n]*", re.MULTILINE)
