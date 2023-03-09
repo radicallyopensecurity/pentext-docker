@@ -28,6 +28,9 @@ the location of this file.
     <renderer mime="application/pdf">
 
     <version>1.5</version>
+    <encryption-params>
+        <encryption-length>256</encryption-length>
+        <encrypt-metadata>true</encrypt-metadata>
 
       <fonts>
 
