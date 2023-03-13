@@ -98,6 +98,12 @@ parser.add_argument(
 	required=False,
 	help="Finding merge strategy when XML file exists"
 )
+parser.add_argument(
+	'--include-labels',
+	default=False,
+	required=False,
+	action=argparse.BooleanOptionalAction
+)
 options = parser.parse_args()
 
 # Standard env variable for the base URL of the GitLab instance,
@@ -550,7 +556,7 @@ class Finding(ProjectIssuePentextXMLFile):
 			self._append_section(doc, root, "update", FindingMergeStrategy.RETEST, update)
 
 		labels = self.get_dom_section(root, "labels")
-		if not exists or (FindingMergeStrategy.LABELS in self.strategy):
+		if options.include_labels and (not exists or (FindingMergeStrategy.LABELS in self.strategy)):
 			if labels is None:
 				labels = doc.createElement("labels")
 				root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
@@ -1155,8 +1161,10 @@ class PentextProject(gitlab.v4.objects.projects.Project):
 		self.resultsinanutshell.write()
 		self.futurework.write()
 		self.report.toggle_include_comments()
-		if (FindingMergeStrategy.LABELS in options.merge_strategy):
+
+		if options.include_labels is True:
 			self.report.update_labels(self.labels.list(iterator=True))
+
 		self.report.write()
 		logging.info("ROS Project written")
 

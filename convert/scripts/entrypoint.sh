@@ -6,6 +6,10 @@ if [ "${MERGE_STRATEGY}" != "" ]; then
 	EXTRA_ARGS="$EXTRA_ARGS --merge-strategy=${MERGE_STRATEGY}"
 fi
 
+if [ "${INCLUDE_LABELS}" != "" ]; then
+	EXTRA_ARGS="$EXTRA_ARGS --include-labels"
+fi
+
 set -e
 set -x
 python3 /scripts/convert.py ${EXTRA_ARGS}
