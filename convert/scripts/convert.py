@@ -4,49 +4,237 @@ import re
 import os
 import os.path
 import pathlib
+import enum
+import argparse
+import functools
 import xml.dom.minidom
 import xml.etree.ElementTree
+import xml.parsers.expat
 import urllib.request
+import requests
+
+import logging
+logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
 
 import pypandoc
-from gitlab import Gitlab
 from slugify import slugify
 
-SKIP_EXISTING=(str(os.environ.get("SKIP_EXISTING", "1")) == "1")
+import gitlab.client
+import gitlab.base
+import gitlab.v4.objects.issues
+import gitlab.v4.objects.notes
+
+class ThreatLevels(enum.IntEnum):
+	UNKNOWN = 0
+	LOW = 1
+	MODERATE = 2
+	ELEVATED = 3
+	HIGH = 4
+	EXTREME = 5
+
+def get_threat_level_number(threatLevel: typing.Optional[str]) -> int:
+	if (threatLevel is None):
+		return ThreatLevels.UNKNOWN
+	_threatLevel =threatLevel.upper()
+	if (_threatLevel not in ThreatLevels._member_names_):
+		return ThreatLevels.UNKNOWN
+	return ThreatLevels[_threatLevel].value
+
+
+class FindingMergeStrategy(enum.IntFlag):
+	RETEST = enum.auto() # <update> and finding status attribute
+	META = enum.auto() # threatLevel, type, status
+	LABELS = enum.auto()
+	TITLE = enum.auto()
+	DESCRIPTION = enum.auto()
+	TECHNICALDESCRIPTION = enum.auto()
+	RECOMMENDATION = enum.auto()
+	IMPACT = enum.auto()
+
+	def __str__(self):
+		return self.name
+
+	@staticmethod
+	def parse_argument(value: str):
+		_value = value.upper().strip("\"'")
+		if (_value == "*"):
+			_value = ",".join([flag.name for flag in FindingMergeStrategy])
+		return functools.reduce(
+			lambda i, k: i | k,
+			[FindingMergeStrategy[flag.strip()] for flag in _value.split(",")],
+			FindingMergeStrategy(0)
+		)
+
+
+def _truthy(value: typing.Union[str, int], default: bool=False) -> bool:
+	_value = str(value).lower()
+	if _value in ["1", "on", "yes", "true"]:
+		return True
+	elif _value in ["0", "off", "no", "false"]:
+		return False
+
+def env_flag(name: str, default: bool) -> bool:
+	state = _truthy(os.environ.get(name, default))
+	return state
+
+SKIP_EXISTING=env_flag("SKIP_EXISTING", True)
+SKIP_UNMODIFIED_TODO=env_flag("SKIP_UNMODIFIED_TODO", True)
 GITLAB_TOKEN=os.environ["PROJECT_ACCESS_TOKEN"]
+COOKIE = os.environ.get("COOKIE")
+INDENT_CHARACTER = "  "
 
-# Standard env variable for the base URL of the GitLab instance, including protocol and port
-# for example https://gitlab.example.org:8080
-GITLAB_SERVER_URL = os.environ.get("CI_SERVER_URL")
+MILESTONE = os.environ.get("MILESTONE")
+LABELS = list(filter(
+	lambda x: len(x),
+	os.environ.get("MATCH_LABELS", "").split(",")
+))
 
-gitlab = Gitlab(
-  GITLAB_SERVER_URL,
-  private_token=GITLAB_TOKEN
+parser = argparse.ArgumentParser()
+parser.add_argument(
+	'--merge-strategy',
+	type=FindingMergeStrategy.parse_argument,
+	metavar=["*"] + [strategy.name for strategy in FindingMergeStrategy],
+	default="*",
+	required=False,
+	help="Finding merge strategy when XML file exists"
 )
-gitlab.auth()
+parser.add_argument(
+	'--include-labels',
+	default=False,
+	required=False,
+	action=argparse.BooleanOptionalAction
+)
+options = parser.parse_args()
+
+# Standard env variable for the base URL of the GitLab instance,
+# including protocol and port (for example https://gitlab.example.org:8080)
+GITLAB_SERVER_URL = os.environ.get(
+	"CI_SERVER_URL",
+	"https://git.radicallyopensecurtity.com"
+)
+
+PENTEXT_CONVERT_COMMENT = "pentext-docker: convert"
+def has_pentext_convert_comment(
+	root: xml.dom.minidom.Element
+) -> typing.Tuple[int, int]:
+	"""Return True of an XML document has a pentext-convert comment."""
+	for node in root.childNodes:
+		if node.nodeType != node.COMMENT_NODE:
+			continue
+		if node.data == PENTEXT_CONVERT_COMMENT:
+			return True
+	return False
+
+if hasattr(xml.etree.ElementTree, "indent") is False:
+	logging.warning("Python XML/HTML indentation not supported")
+
+session = requests.Session()
+session.headers["PRIVATE-TOKEN"] = GITLAB_TOKEN
+if COOKIE is not None:
+	session.headers["Cookie"] = COOKIE
+client = gitlab.client.Gitlab(
+  url=GITLAB_SERVER_URL,
+  private_token=GITLAB_TOKEN,
+  session=session,
+  keep_base_url=True
+)
+client.auth()
 
 opener = urllib.request.build_opener()
 opener.addheaders = [('PRIVATE-TOKEN', GITLAB_TOKEN)]
+if COOKIE is not None:
+	opener.addheaders.append(('COOKIE', COOKIE))
 urllib.request.install_opener(opener)
 
 pathlib.Path("uploads").mkdir(parents=True, exist_ok=True)
 pathlib.Path("findings").mkdir(parents=True, exist_ok=True)
 pathlib.Path("non-findings").mkdir(parents=True, exist_ok=True)
 
-
 class InvalidUploadPathException(Exception):
 	pass
 
+def curry_project_obj_cls(obj_cls, pentext_project):
+	def _obj_cls(*args, **kwargs):
+		return obj_cls(*args, **kwargs, pentext_project=pentext_project)
+	return _obj_cls
 
-upload_path_pattern = re.compile(
-	"(?:\.{2})?/uploads/(?P<hex>[A-Fa-f0-9]{32})/(?P<filename>[^\.][^/]+)"
-)
+def to_prettyxml(doc):
+	output = doc.toxml(encoding="UTF-8").decode("UTF-8")
+	# force newline after XML declaration
+	output = re.sub(r"^(<\?xml[^>\n]*>)", r"\1\n", output, count=1)
+	# end file with newline
+	output = re.sub(r"\n*$", "\n", output)
+	return output
+
+_p_pre_code_open = re.compile(r"<pre>[\s\r\n]*<code>[\s\r\n]*", re.MULTILINE)
+_p_pre_code_close = re.compile(r"[\s\r\n]*</code>[\s\r\n]*</pre>", re.MULTILINE)
+_p_syntax_highlighting = re.compile(r"```(.+)$", re.MULTILINE)
+
+def _fix_code_blocks(html: str) -> str:
+	html = re.sub(_p_pre_code_open, "<pre><code>", html)
+	html = re.sub(_p_pre_code_close, "</code></pre>", html)
+	return html
+
+def _remove_syntax_highlighting(markdown_text: str) -> str:
+	return re.sub(_p_syntax_highlighting, "```", markdown_text)
+
+def _indent_html(html, level):
+	if not hasattr(xml.etree.ElementTree, "indent"):
+		return html
+	htmlTree = xml.etree.ElementTree.fromstring(f"<root>{html}</root>")
+	xml.etree.ElementTree.indent(htmlTree, space=INDENT_CHARACTER, level=level)
+	return xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
+
+def markdown(
+	markdown_text: str,
+	id_prefix: str,
+	level=0
+) -> str:
+	# pre-processing
+	markdown_text = _resolve_internal_links(markdown_text)
+	markdown_text = _remove_syntax_highlighting(markdown_text)
+	if re.search(r"[^A-Za-z0-9_\-\\\/]", str(id_prefix)) is not None:
+		# prevent shell argument injection
+		raise Exception(f"Invalid id_prefix: {id_prefix}")
+	_id_prefix = f"gitlab{id_prefix}"\
+
+	# convert markdown to HTML
+	html = pypandoc.convert_text(
+		markdown_text,
+		'html5',
+		format='gfm',
+		extra_args=[f"--id-prefix={_id_prefix}"]
+	).replace('\r\n', '\n')
+
+	# post-processing
+	html = _indent_html(html, level)
+	html = _fix_code_blocks(html)
+
+	return html
+
+def markdown_to_dom(*args, **kwargs) -> typing.List[xml.dom.minidom.Element]:
+	dom = xml.dom.minidom.parseString(markdown(*args, **kwargs))
+	return dom.firstChild.childNodes
+
+def _is_pentext_label(label) -> bool:
+	_label = label.lower()
+	if _label in ["finding", "non-finding", "future-work", "done"]:
+		return True
+	elif _label.startswith("threatlevel:"):
+		return True
+	elif _label.startswith("reteststatus:"):
+		return True
 
 
 class Upload:
 
-	def __init__(self, path) -> None:
+	upload_path_pattern = re.compile(
+		"(?:\.{2})?/uploads/(?P<hex>[A-Fa-f0-9]{32})/(?P<filename>[^\.][^/]+)"
+	)
+
+	def __init__(self, path, pentext_project=None) -> None:
 		self.path = path
+		self.pentext_project = pentext_project
 
 	@property
 	def path(self):
@@ -54,7 +242,7 @@ class Upload:
 	
 	@path.setter
 	def path(self, value):
-		match = upload_path_pattern.match(value)
+		match = self.upload_path_pattern.match(value)
 		if match is None:
 			raise InvalidUploadPathException()
 		self.hex = match["hex"]
@@ -62,7 +250,10 @@ class Upload:
 
 	@property
 	def url(self):
-		project_url = os.environ["CI_PROJECT_URL"]
+		project_url = urllib.parse.urljoin(
+			client._base_url,
+			self.pentext_project.path_with_namespace
+		)
 		return f"{project_url}{self.path}"
 	
 	@property
@@ -71,38 +262,36 @@ class Upload:
 
 	def download(self) -> None:
 		if os.path.exists(self.local_path) is True:
-			print(f"skip download {self.local_path} - file exists")
+			logging.info(f"skip download {self.local_path} - file exists")
 			return
 		dirname = os.path.dirname(self.local_path)
 		os.makedirs(dirname, exist_ok=True)
-		print(f"downloading {self.url} to {self.local_path}")
+		logging.info(f"downloading {self.url} to {self.local_path}")
 		urllib.request.urlretrieve(self.url, self.local_path)
 
 
-class ReportAsset:
+class PentextXMLFile:
+	"""
+	Pentext XML file.
+
+	Typically located in source/*.xml, but includes (non-)findings/*.xml as well.
+	"""
+
+	source_dir = "source"
 
 	def __init__(
 		self,
-		id: int,
-		iid: int,
-		title: str,
-		project=None
-	):
-
-		if type(id) != int:
-			raise Exception("ID must be an Integer")
-
-		if type(iid) != int:
-			raise Exception("Issue ID must be an Integer")
-
-		self.id = id
-		self.iid = iid
-		self.title = title
-		self.project = project
+		pentext_project=None,
+	) -> None:
+		self.pentext_project = pentext_project
+		self._doc = None
 
 	@property
 	def doc(self):
-		raise NotImplementedError()
+		"""Existing file XML dom."""
+		if (self._doc is None) and self.exists:
+			self.read()
+		return self._doc
 
 	@property
 	def processed_doc(self):
@@ -112,82 +301,24 @@ class ReportAsset:
 		for image in images:
 			image_url = image.getAttribute("src");
 			try:
-				attachment = Upload(image_url)
+				attachment = Upload(image_url, pentext_project=self.pentext_project)
 				attachment.download()
 				image.setAttribute("src", f"../{attachment.local_path}")
 			except InvalidUploadPathException:
 				pass
 		return doc
 
-	@property
-	def prettyxml(self):
-		prettyxml = self.processed_doc.toxml(
-			encoding="UTF-8"
-		).decode("UTF-8")
-		return self._fix_code_blocks(prettyxml);
+	def read(self):
+		if not self.exists:
+			raise Exception(f"File {self.relative_path} does not exist")
+		logging.info(f"parsing {self.relative_path}")
+		self._doc = xml.dom.minidom.parse(self.relative_path)
 
-	def _resolve_internal_links(self, markdown_text: str) -> str:
-
-		def resolve_link(match):
-			try:
-				target_finding = next(filter(
-					lambda finding: finding.iid == int(match.group(1)),
-					self.project.findings
-				))
-				return f'<a href="#{target_finding.slug}"/>';
-			except StopIteration:
-				return f"{match.group()}"
-
-		return re.sub(
-			r'#(\d+)',
-			resolve_link,
-			markdown_text
-		)
-
-	@staticmethod
-	def _fix_code_blocks(html: str) -> str:
-		opening = re.compile(r"<pre>[\s\r\n]*<code>[\s\r\n]*", re.MULTILINE)
-		closing = re.compile(r"[\s\r\n]*</code>[\s\r\n]*</pre>", re.MULTILINE)
-		html = re.sub(opening, "<pre><code>", html)
-		html = re.sub(closing, "</code></pre>", html)
-		return html
-
-	@staticmethod
-	def _remove_syntax_highlighting(markdown_text: str) -> str:
-		syntax_highlighting_pattern = re.compile(r"```.+$", re.MULTILINE)
-		return re.sub(syntax_highlighting_pattern, "```", markdown_text)
-
-	def _markdown_to_dom(
-		self,
-		markdown_text: str
-	) -> typing.List[xml.dom.minidom.Element]:
-		markdown_text = self._resolve_internal_links(markdown_text)
-		markdown_text = self._remove_syntax_highlighting(markdown_text)
-		html = pypandoc.convert_text(
-			markdown_text,
-			'html5',
-			format='gfm',
-			extra_args=[f"--id-prefix=ros{self.iid}"]
-		).replace('\r\n', '\n')
-		htmlTree = xml.etree.ElementTree.fromstring(f"<root>{html}</root>")
-		if hasattr(xml.etree.ElementTree, "indent"):
-			xml.etree.ElementTree.indent(htmlTree, space="  ", level=0)
-		else:
-			print("Warning: Python indentation not supported")
-		dom = xml.dom.minidom.parseString(
-			xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
-		)
-		nodes = dom.firstChild.childNodes
-		if isinstance(nodes[-1], xml.dom.minidom.Text):
-			nodes[-1].nodeValue = "\n"
-		return dom.firstChild.childNodes
-
-	def write(self, path=None) -> None:
-		if path is None:
-			path = self.relative_path
-		with open(path, "w") as file:
-			print(f"writing {path}")
-			file.write(self.prettyxml)
+	def write(self) -> None:
+		prettyxml = to_prettyxml(self.processed_doc)
+		with open(self.relative_path, "w", encoding="UTF-8") as file:
+			logging.info(f"writing {self.relative_path}")
+			file.write(prettyxml)
 
 	@property
 	def exists(self):
@@ -195,112 +326,323 @@ class ReportAsset:
 
 	@property
 	def relative_path(self):
-		return self.filename
+		return os.path.join(self.source_dir, self.filename)
+
+	@property
+	def filename(self):
+		raise NotImplementedError()
+
+
+class ProjectIssuePentextSection(gitlab.v4.objects.issues.ProjectIssue):
+	"""
+	Pentext section GitLab.
+	"""
+	__module__ = "gitlab.v4.objects.issues"
+
+	@property
+	def extra_labels(self) -> typing.List[str]:
+		"""Return GitLab Issue labels that are not associated with Pentext."""
+		return [label for label in self.labels if not _is_pentext_label(label)]
+
+
+class ProjectIssuePentextXMLFile(
+	PentextXMLFile,
+	ProjectIssuePentextSection
+):
+	"""
+	GitLab Issue associated with a Pentext XML file.
+
+	Pentext Findings or Non-Findig XML files (findings/f1-finding-title-slug.xml)
+	are related to a GitLab Issue.
+	"""
+	__module__ = "gitlab.v4.objects.issues"
+
+	def __init__(self, *args, pentext_project, **kwargs) -> None:
+		gitlab.v4.objects.issues.ProjectIssue.__init__(self, *args, **kwargs)
+		PentextXMLFile.__init__(self, pentext_project=pentext_project)
+		self.existing_doc = None
+
+	@property
+	def slug(self):
+		return f"f{self.iid}-{slugify(self.title)}"
 
 	@property
 	def filename(self):
 		return f"{self.slug}.xml"
 
 	@property
-	def slug(self):
-		return f"f{self.iid}-{slugify(self.title)}"
+	def relative_path(self):
+		return os.path.join(self.source_dir, self.filename)
 
 
-class Finding(ReportAsset):
+class FindingIssueNote(gitlab.v4.objects.notes.ProjectIssueNote):
+	"""
+	GitLab Issue Discussion starting with a prefix keyword.
+	"""
+	__module__ = "gitlab.v4.objects.notes"
 
-	def __init__(
-		self,
-		id: int,
-		iid: int,
-		title: str,
-		description: str="",
-		technicaldescription: str="",
-		impact: str="",
-		updates: typing.List[str]=[],
-		recommendation: str="",
-		threatlevel: str="Unknown",
-		type: str="Unknown",
-		status: str="none",
-		project=None
-	) -> None:
-		super().__init__(
-			id=id,
-			iid=iid,
-			title=title,
-			project=project
-		)
-		self.description = description
-		self.technicaldescription = technicaldescription
-		self.impact = impact
-		self.updates = updates
-		self.recommendation = recommendation
-		self.threatlevel = threatlevel
-		self.type = type
-		self.status = status
+	NOTE_KEYWORDS = [
+		"recommendation",
+		"impact",
+		"update",
+		"type",
+		"technicaldescription"
+	]
+
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		lines = self.body.splitlines()
+		first_line = lines.pop(0)
+		keyword = first_line.lower().replace(" ", "").strip().strip("#:")
+		if keyword in self.NOTE_KEYWORDS:
+			# remove leading empty lines
+			while len(lines) and lines[0].strip() == "":
+				lines.pop(0)
+			self.markdown = "\n".join(lines).strip()
+			self.keyword = keyword
+		else:
+			self.markdown = self.body.strip()
+			self.keyword = None
+
+	def __str__(self):
+		return self.markdown
+
+
+class TodoNote:
+	"""
+	Placeholder when an expected ProjectIssueNote was not found.
+	"""
+	def __init__(self, keyword, message="ToDo", *args, **kwargs):
+		self.keyword = keyword
+		self.markdown = message
+
+	def __str__(self):
+		return self.markdown
+
+
+class Finding(ProjectIssuePentextXMLFile):
+	"""
+	Pentext finding XML structure associated with a GitLab Issue.
+	"""
+	__module__ = "gitlab.v4.objects.issues"
+
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self._pentext_notes = None
+		self.strategy = options.merge_strategy
+
+	@property
+	def pentext_notes(self):
+		if self._pentext_notes is None:
+			self._pentext_notes = []
+			_obj_cls = self.notes._obj_cls
+			self.notes._obj_cls = FindingIssueNote
+			first_note = None
+			has_technical_description = False
+			for note in self.notes.list(
+				sort="asc",
+				order_by="created_at",
+				iterator=True
+			):
+				if note.system is True:
+					continue
+				if first_note is None:
+					first_note = note
+				if note.keyword == "technicaldescription":
+					has_technical_description = True
+				self._pentext_notes.append(note)
+			self.notes._obj_cls = _obj_cls
+			if not has_technical_description and (first_note.keyword is None):
+				first_note.keyword = "technicaldescription"
+		return self._pentext_notes
+	
+	@property
+	def technicaldescription(self) -> FindingIssueNote:
+		try:
+			return next(self.get_note_by_type("technicaldescription"))
+		except StopIteration:
+			return TodoNote("technicaldescription")
+
+	@property
+	def type(self) -> FindingIssueNote:
+		try:
+			return next(self.get_note_by_type("type"))
+		except StopIteration:
+			return TodoNote("type")
+
+	@property
+	def recommendation(self) -> FindingIssueNote:
+		try:
+			return next(self.get_note_by_type("recommendation"))
+		except StopIteration:
+			return TodoNote("recommendation")
+
+	@property
+	def impact(self) -> FindingIssueNote:
+		try:
+			return next(self.get_note_by_type("impact"))
+		except StopIteration:
+			return TodoNote("impact")
+
+	@property
+	def updates(self) -> typing.List[FindingIssueNote]:
+		return [note.markdown for note in self.get_note_by_type("update")]
+
+	@property
+	def status(self) -> str:
+		for label in self.labels:
+			if label.lower().startswith("reteststatus:"):
+				return label.split(":", maxsplit=1)[1]
+		return "none"
+
+	@property
+	def threatlevel(self) -> str:
+		for label in self.labels:
+			if label.lower().startswith("threatlevel:"):
+				return label.split(":", maxsplit=1)[1]
+		return "Unknown"
+
+	def get_note_by_type(self, note_type) -> typing.List[FindingIssueNote]:
+		for note in self.pentext_notes:
+			if note.keyword == note_type:
+				yield note
+
+	@staticmethod
+	def get_dom_section(root, tagName) -> xml.dom.minidom.Element:
+		for node in root.childNodes:
+			if node.nodeType == node.ELEMENT_NODE and node.tagName == tagName:
+				return node
 
 	@property
 	def doc(self):
-		doc = xml.dom.minidom.Document()
+		level = 1
+		exists = self.exists
+		if exists is True:
+			if self._doc is None:
+				self.read()
+			doc = self._doc
+			root = doc.documentElement
+		else:
+			doc = xml.dom.minidom.Document()
+			root = doc.createElement("finding")
+			root.appendChild(doc.createTextNode("\n"))
+			doc.appendChild(root)
 
-		root = doc.createElement("finding");
-		root.setAttribute("id", self.slug)
-		root.setAttribute("number", str(self.iid))
-		root.setAttribute("threatLevel", self.threatlevel)
-		root.setAttribute("type", self.type)
-		root.setAttribute("status", self.status)
-		root.appendChild(doc.createTextNode("\n"))
+		if not exists or (FindingMergeStrategy.META in self.strategy):
+			root.setAttribute("id", self.slug)
+			root.setAttribute("number", str(self.iid))
+			root.setAttribute("threatLevel", str(self.threatlevel))
+			root.setAttribute("type", str(self.type))
+		if not exists or ((FindingMergeStrategy.META & FindingMergeStrategy.RETEST) in self.strategy):
+			root.setAttribute("status", self.status)
 
-		title = doc.createElement("title");
-		title.appendChild(doc.createTextNode(self.title))
-		root.appendChild(title)
-		root.appendChild(doc.createTextNode("\n"))
+		title = self.get_dom_section(root, "title")
+		if not exists or (FindingMergeStrategy.TITLE in self.strategy):
+			if title is None:
+				title = doc.createElement("title")
+				root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
+				root.appendChild(title)
+				root.appendChild(doc.createTextNode("\n"))
+			while title.hasChildNodes():
+				title.removeChild(title.firstChild)
+			title.appendChild(doc.createTextNode(self.title))
 
-		self.__append_section(doc, root, "description")
-		self.__append_section(doc, root, "technicaldescription")
-		self.__append_section(doc, root, "impact")
-		self.__append_section(doc, root, "recommendation")
-
+		self._append_section(doc, root, "description", FindingMergeStrategy.DESCRIPTION)
+		self._append_section(doc, root, "technicaldescription", FindingMergeStrategy.TECHNICALDESCRIPTION)
+		self._append_section(doc, root, "impact", FindingMergeStrategy.IMPACT)
+		self._append_section(doc, root, "recommendation", FindingMergeStrategy.RECOMMENDATION, unwrap=False)
 		for update in self.updates:
 			# there can be multiple update sections
-			self.__append_section(doc, root, "update", update)
+			self._append_section(doc, root, "update", FindingMergeStrategy.RETEST, update)
 
-		doc.appendChild(root)
+		labels = self.get_dom_section(root, "labels")
+		if options.include_labels and (not exists or (FindingMergeStrategy.LABELS in self.strategy)):
+			if labels is None:
+				labels = doc.createElement("labels")
+				root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
+				root.appendChild(labels)
+				root.appendChild(doc.createTextNode("\n"))
+			while labels.hasChildNodes():
+				labels.removeChild(labels.firstChild)
+			for label_title in self.extra_labels:
+				label = doc.createElement("label")
+				label.appendChild(doc.createTextNode(label_title))
+				labels.appendChild(
+					doc.createTextNode(f"\n{INDENT_CHARACTER * (level + 1)}")
+				)
+				labels.appendChild(label)
+			if len(self.extra_labels):
+				labels.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
+
 		return doc
 
-	def __append_section(self, doc, parentNode, name, markdown_text=None):
-		section = xml.dom.minidom.Element(name)
-		if markdown_text is None:
-			markdown_text = self.__getattribute__(name)
-		section_nodes = self._markdown_to_dom(markdown_text)
-		while len(section_nodes):
-			node = section_nodes[0]
-			section.appendChild(node)
-		parentNode.appendChild(section)
-		parentNode.appendChild(doc.createTextNode("\n"))
+	@doc.setter
+	def doc(self, value) -> None:
+		self._dom = value
 
+	def __unwrap_single_paragraph_node(self, nodes) -> typing.List[xml.dom.minidom.Element]:
+		"""
+		Unwrap single paragraph DOM (e.g. <description><p>.*</p></description>).
+		"""
+		first_element_index = None
+		for index, node in enumerate(nodes):
+			if (node.nodeType == node.ELEMENT_NODE):
+				if first_element_index is None:
+					first_element_index = index
+				else:
+					# do nothing when multiple element nodes are found
+					return nodes
+		if first_element_index is not None:
+			exclusions = ["ul"]
+			if nodes[first_element_index].tagName in exclusions:
+				return nodes
+			return nodes[first_element_index].childNodes
+		return nodes
+
+	def _append_section(
+		self,
+		doc,
+		parentNode,
+		name,
+		update_strategy,
+		markdown_text=None,
+		level=1,
+		unwrap=True
+	) -> None:
+		section = self.get_dom_section(parentNode, name)
+		if section is None:
+			section = doc.createElement(name)
+			parentNode.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
+			parentNode.appendChild(section)
+			parentNode.appendChild(doc.createTextNode("\n"))
+		elif update_strategy not in self.strategy:
+			logging.debug(f"Finding section {name} exists but skipped because update strategy {update_strategy} is not enabled")
+			return
+		else:
+			while section.hasChildNodes():
+				section.removeChild(section.firstChild)
+
+		if markdown_text is None:
+			_value = getattr(self, name)
+			# description is native value str
+			markdown_text = _value if isinstance(_value, str) else _value.markdown
+		section_nodes = markdown_to_dom(markdown_text, self.iid, level=level)
+		if unwrap is True:
+			section_nodes = self.__unwrap_single_paragraph_node(section_nodes)
+
+		while len(section_nodes):
+			node = section_nodes.pop(0)
+			node.parentNode = None
+			section.appendChild(node)
 
 	@property
 	def relative_path(self):
 		return f"findings/{self.filename}"
 
 
-class NonFinding(ReportAsset):
+class NonFinding(ProjectIssuePentextXMLFile):
 
-	def __init__(
-		self,
-		id: int,
-		iid: int,
-		title: str,
-		description: str="",
-		project=None
-	) -> None:
-		super().__init__(
-			id=id,
-			iid=iid,
-			title=title,
-			project=project
-		)
-		self.description = description
+	__module__ = "gitlab.v4.objects.issues"
 
 	@property
 	def doc(self):
@@ -315,7 +657,7 @@ class NonFinding(ReportAsset):
 		root.appendChild(title)
 		root.appendChild(doc.createTextNode("\n"))
 
-		content_nodes = self._markdown_to_dom(self.description)
+		content_nodes = markdown_to_dom(self.description, self.iid, level=1)
 		while len(content_nodes):
 			node = content_nodes[0]
 			root.appendChild(node)
@@ -327,28 +669,18 @@ class NonFinding(ReportAsset):
 		return f"non-findings/{self.filename}"
 
 
-class ReportAssetSection(ReportAsset):
-
+class PentextXMLFileSection(PentextXMLFile):
+	"""
+	Section with multiple parts associated with multiple or no GitLab Issues.
+	"""
 	def __init__(
 		self,
-		text: str,
-		**kwargs
+		*parts,
+		pentext_project=None
 	) -> None:
-		super().__init__(0, 0, self.section_title, **kwargs)
-		self.text = text
+		super().__init__(pentext_project=pentext_project)
 		self._doc = None
-
-	@property
-	def section_title(self):
-		raise NotImplementedError;
-
-	@property
-	def filename(self):
-		raise NotImplementedError;
-
-	@property
-	def relative_path(self):
-		return f"source/{self.filename}"
+		self.parts = parts
 
 	@property
 	def doc(self):
@@ -356,59 +688,85 @@ class ReportAssetSection(ReportAsset):
 
 	@property
 	def is_user_modified(self):
-		return self.text is not None
-
-	def write(self, dest=None):
-		if self.is_user_modified is False:
-			print(f"No {self.title} issue found - skipping {self.relative_path}")
-			return
-		if dest is None:
-			dest = self.relative_path
-
-		xml_content = self.prettyxml
-		with open(dest, "w", encoding="UTF-8") as file:
-			print(f"writing {self.title} to {dest}")
-			file.write(xml_content)
+		return len(self.parts) > 0
 
 
-class Conclusion(ReportAssetSection):
+class PentextXMLFileTodoSection(PentextXMLFileSection):
+	"""
+  Report section in separate Pentext XML file.
 
-	@property
-	def section_title(self):
-		return "Conclusion"
+  A source file is read (e.g. source/conclusion.xml) and content from GitLab
+  Issues is replacing the <todo/> note.
 
-	@property
-	def filename(self):
-		return "conclusion.xml"
+	  <wrapper id="gitlab/project/[0-9]+/issues/[0-9]+/">
+			<title optional/>
+			<markdown_description/>
+	  </wrapper>
+
+	Each section can have multiple parts, for instance multiple GitLab Issues
+	matching the criteria. This can be useful when generating Milestone reports
+	or filter results by certain label.
+	"""
+
+	# wrapping the Markdown content from GitLab
+	wrapper_element = "div"
+
+	# include GitLab Issue title (e.g. Future Work <li><b>Title</b>...</li>)
+	title_element = None
+	
+	# match documents indentation level
+	# <pre/> elements cannot be indented later
+	indent_level = 1
+	
+	# Versions of Pentext wrap a ToDo in an inline element, which should removed
+	todo_element_wrapper = "p" # <p><todo/></p>
+
+	def getDOM(self, *args, **kwargs):
+		"""Concate"""
+		for part in self.parts:
+			yield from part.getDOM(*args, **kwargs)
 
 	@property
 	def doc(self):
 		if self._doc is None:
-			print(f"Reading {self.title} from {self.relative_path}")
+			logging.info(f"Reading {self.section_title} from {self.relative_path}")
 			doc = xml.dom.minidom.parse(self.relative_path)
 			self._doc = self.replace_todo(doc)
 		return self._doc
 
 	def replace_todo(self, doc):
+		if has_pentext_convert_comment(doc.documentElement) is True:
+			logging.debug(
+				f"{self.section_title} is already converted - skip replacing <todo/>"
+			)
+			return doc
 		todos = doc.documentElement.getElementsByTagName("todo")
 		if len(todos) == 0:
 			# skip when no <todo> element was found in XML
 			return doc
-		if self.text == None:
+		if (self.is_user_modified is False) and (SKIP_UNMODIFIED_TODO is True):
 			# skip when this asset was not found in GitLab issues
 			return doc
 
 		todo = todos[0]
-		if todo.parentNode.tagName == "p":
-			# <p><todo/></p>
+		if todo.parentNode.tagName == self.todo_element_wrapper:
 			todo = todo.parentNode
 
-		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
-		nodes = self._markdown_to_dom(self.text)
-		while len(nodes):
-			node = nodes[0]
+		prefix = "\n"
+		before_todo = todo.previousSibling
+		if (before_todo is not None) and (before_todo.nodeType == doc.TEXT_NODE):
+			prefix = "\n" + before_todo.nodeValue.splitlines().pop()
+
+		todo.parentNode.insertBefore(doc.createComment(PENTEXT_CONVERT_COMMENT), todo)
+		todo.parentNode.insertBefore(doc.createTextNode(prefix), todo)
+		for node in self.getDOM(
+			wrapper_element=self.wrapper_element,
+			title_element=self.title_element,
+			indent_level=self.indent_level
+		):
 			todo.parentNode.insertBefore(node, todo)
-		todo.parentNode.insertBefore(doc.createComment("pentext-docker: convert"), todo)
+			todo.parentNode.insertBefore(doc.createTextNode(prefix), todo)
+		todo.parentNode.insertBefore(doc.createComment(PENTEXT_CONVERT_COMMENT), todo)
 
 		# remove empty text node before the todo item
 		prev = todo.previousSibling
@@ -419,130 +777,93 @@ class Conclusion(ReportAssetSection):
 		return doc
 
 
-class FutureWork(ReportAssetSection):
+class Conclusion(PentextXMLFileTodoSection):
 
-	def __init__(
-		self,
-		items: typing.List[typing.Dict[str, str]],
-		**kwargs
-	) -> None:
-		super().__init__(None, **kwargs)
-		self.items = items
-		self._doc = None
-
-	@property
-	def section_title(self):
-		return "Future Work"
-
-	@property
-	def filename(self):
-		return "futurework.xml"
-
-	@property
-	def is_user_modified(self):
-		return len(self.items) > 0
-
-	@property
-	def doc(self):
-		if self._doc is None:
-			print(f"Reading {self.title} from {self.relative_path}")
-			doc = xml.dom.minidom.parse(self.relative_path)
-			self._doc = self.replace_todo(doc)
-		return self._doc
-
-	def replace_todo(self, doc):
-		todos = doc.documentElement.getElementsByTagName("todo")
-		if len(todos) == 0:
-			# skip when no <todo> element was found in XML
-			return doc
-		if self.is_user_modified is False:
-			# skip when no GitLab issues with 'future-work' label were found
-			return doc
-
-		todo = todos[0]
-		if todo.parentNode.tagName == "li":
-			# <li><todo/></li>
-			todo = todo.parentNode
-
-		todo.parentNode.insertBefore(
-			doc.createComment("pentext-docker: convert"),
-			todo
-		)
-		for item in self.items:
-			futurework_item = doc.createElement("li")
-			_title = doc.createElement("b")
-			_title.appendChild(doc.createTextNode(item.title))
-			futurework_item.appendChild(_title)
-			nodes = self._markdown_to_dom(item.description)
-			while len(nodes):
-				node = nodes[0]
-				futurework_item.appendChild(node)
-				futurework_item.appendChild(doc.createTextNode("\n"))
-			todo.parentNode.insertBefore(futurework_item, todo)
-		todo.parentNode.insertBefore(
-			doc.createComment("pentext-docker: convert"),
-			todo
-		)
-
-		# remove empty text node before the todo item
-		prev = todo.previousSibling
-		if (prev is not None) and (prev.nodeType == doc.TEXT_NODE) and (len(prev.nodeValue.strip()) == 0):
-			prev.parentNode.removeChild(prev)
-		todo.parentNode.removeChild(todo)
-
-		return doc
+	section_title = "Conclusion"
+	filename = "conclusion.xml"
 
 
-class ResultsInANutshell(ReportAssetSection):
+class ResultsInANutshell(PentextXMLFileTodoSection):
+
+	section_title = "Results In A Nutshell"
+	filename = "resultsinanutshell.xml"
+
+
+class FutureWork(PentextXMLFileTodoSection):
+
+	section_title = "Future Work"
+	filename = "futurework.xml"
+	wrapper_element = "li"
+	title_element = "b"
+	indent_level = 2
+	todo_element_wrapper = "li" # <li><todo/></li>
+
+
+class SectionPart(gitlab.v4.objects.issues.ProjectIssue):
+	"""
+	One single part of a PentextXMLFileSection represented by a GitLab Issue each.
+	"""
+	__module__ = "gitlab.v4.objects.issues"
+
+	def __init__(self, *args, pentext_project, **kwargs) -> None:
+		#self.pentext_project = pentext_project
+		super().__init__(*args, **kwargs)
 
 	@property
-	def section_title(self):
-		return "Results In A Nutshell"
+	def path(self):
+		return f"{self.manager.path}/{self.encoded_id}/"
 
-	@property
-	def filename(self):
-		return "resultsinanutshell.xml"
-
-	@property
-	def doc(self):
+	def _getDOM(self, wrapper_element, title_element, indent_level):
 		doc = xml.dom.minidom.Document()
+		root = doc.createElement(wrapper_element or "root")
+		root.setAttribute("id", self.path)
 
-		root = doc.createElement("section")
-		root.setAttribute("id", "resultsinanutshell")
-		root.setAttribute("xml:base", self.filename)
+		if title_element is not None:
+			title = doc.createElement(title_element)
+			title.appendChild(doc.createTextNode(self.title))
+			root.appendChild(
+				doc.createTextNode("\n" + ((indent_level+1) * INDENT_CHARACTER))
+			)
+			root.appendChild(title)
+			#root.appendChild(doc.createTextNode("\n"))
 
-		title = doc.createElement("title");
-		title.appendChild(doc.createTextNode(self.title))
-		root.appendChild(title)
+		dom = markdown_to_dom(self.description, self.path, level=indent_level)
+		while(len(dom) > 0):
+			root.appendChild(dom[0])
+		return root
 
-		section_nodes = self._markdown_to_dom(self.text)
-		while len(section_nodes):
-			node = section_nodes[0]
-			root.appendChild(node)
+	def getDOM(self, wrapper_element, title_element, indent_level):
+		dom = self._getDOM(
+			wrapper_element=wrapper_element or "root",
+			title_element=title_element,
+			indent_level=indent_level
+		)
+		if wrapper_element is None:
+			# flatten childNodes in case the wrapper element itself is omitted
+			for el in dom:
+				yield from el.firstChild.childNodes
+		else:
+			yield dom
 
-		doc.appendChild(root)
-		return doc
 
+class Report(PentextXMLFile):
 
-class Report:
+	filename = "report.xml"
 
 	def __init__(
 		self,
-		path: str="source/report.xml"
 	) -> None:
-		self.path = path
-		self.doc = None
+		self._added_hrefs = []
+		self._doc = None
 		self.read()
 
-	def read(self):
-		self.doc = xml.dom.minidom.parse(self.path)
+	@property
+	def doc(self):
+		return self._doc
 
-	def write(self, dest=None):
-		if dest is None:
-			dest = self.path
-		with open(dest, "w", encoding="UTF-8") as file:
-			print(f"writing report to {dest}")
-			file.write(self.doc.toxml())
+	@doc.setter
+	def doc(self, value: xml.dom.minidom.Document) -> None:
+		self._doc = value
 
 	def get_section(self, section_name):
 		for section in self.doc.documentElement.getElementsByTagName("section"):
@@ -555,19 +876,130 @@ class Report:
 
 	@property
 	def non_findings(self):
-		return self.get_section("non-findings")
+		return self.get_section("nonFindings")
+
+	@staticmethod
+	def _is_include_element(node: typing.Any) -> bool:
+		if isinstance(node, xml.dom.minidom.Element) is False:
+			return False
+		elif node.tagName != "xi:include":
+			return False
+		elif node.hasAttribute("href") is False:
+			return False
+		return True
+
+	def _should_include_be_visible(
+		self,
+		node: xml.dom.minidom.Element
+	) -> typing.Optional[bool]:
+		if self._is_include_element(node) is False:
+			return None
+		return node.getAttribute("href").strip() in self._added_hrefs
+
+	def _get_include_by_href(
+		self,
+		section: xml.dom.minidom.Element,
+		href: str
+	) -> typing.Optional[typing.Union[
+		xml.dom.minidom.Comment,
+		xml.dom.minidom.Element
+	]]:
+		for node in section.childNodes:
+			if self._is_include_element(node):
+				if node.getAttribute("href") == href:
+					return node
+			if isinstance(node, xml.dom.minidom.Comment):
+				try:
+					include = xml.dom.minidom.parseString(node.nodeValue.strip())
+					if include.documentElement.getAttribute("href") == href:
+						return node
+				except xml.parsers.expat.ExpatError:
+					pass
+		return None
+
+	def _toggle_comment(
+		self,
+		element: xml.dom.minidom.Element,
+		visible: typing.Optional[bool]=None
+	) -> None:
+		parent = element.parentNode
+		if isinstance(element, xml.dom.minidom.Comment):
+			# comment out
+			if visible is False:
+				return # already commented out
+			root = xml.dom.minidom.parseString(element.nodeValue.strip())
+			node = root.documentElement
+			nodes = root.childNodes
+			while len(nodes):
+				node = nodes[0]
+				parent.insertBefore(node, element)
+			parent.removeChild(element)
+		elif self._is_include_element(element):
+			if visible is True:
+				return # should not be commented out
+			comment = element.toxml(encoding="UTF-8").decode("UTF-8")
+			parent.insertBefore(xml.dom.minidom.Comment(comment), element)
+			parent.removeChild(element)
+
+	def toggle_include_comments(
+		self,
+		section: typing.Optional[typing.List[xml.dom.minidom.Node]]=None
+	) -> None:
+
+		if section is None:
+			self.toggle_include_comments(self.get_section("findings"))
+			self.toggle_include_comments(self.get_section("nonFindings"))
+			return
+
+		for item in section.childNodes:
+			# check existing comments for items to comment in
+			if isinstance(item, xml.dom.minidom.Comment):
+				try:
+					parsed = xml.dom.minidom.parseString(item.nodeValue.strip())
+					if self._should_include_be_visible(parsed.documentElement) is True:
+						self._toggle_comment(item, visible=True)
+				except:
+					# ignore comments with invalid content
+					pass
+			elif self._is_include_element(item):
+				# check existing item and comment out if necessary
+				if self._should_include_be_visible(item) is not True:
+					self._toggle_comment(item, visible=False)
 
 	def add(self, section_name, item):
-		el = self.doc.createElement("xi:include")
-		el.setAttribute("xmlns:xi", "http://www.w3.org/2001/XInclude")
-		el.setAttribute("href", os.path.join("..", item.relative_path))
+
+		doc = self.doc
 		section = self.get_section(section_name)
+		href = os.path.join("..", item.relative_path)
+		self._added_hrefs.append(href)
+
+		line_prefix = "\n"
+		if (section.firstChild.nodeType == doc.TEXT_NODE):
+			line_prefix = section.firstChild.nodeValue
+
+		existing_include = self._get_include_by_href(section, href)
+		if existing_include is not None:
+			self._toggle_comment(existing_include, visible=True)
+			return
+
+		el = doc.createElement("xi:include")
+		el.setAttribute("xmlns:xi", "http://www.w3.org/2001/XInclude")
+		el.setAttribute("href", href)
+
 		if section is None:
-			print(
+			logging.warning(
 				f"A {section_name} section was not found in the XML file."
 				f" - {section_name} will not be included."
 			)
+			return
+
+		_line_prefix = self.doc.createTextNode(line_prefix)
+		if (section.lastChild.nodeType == doc.TEXT_NODE):
+			section.insertBefore(_line_prefix, section.lastChild)
+			section.insertBefore(el, section.lastChild)
 		else:
+			# append as last element else
+			section.appendChild(_line_prefix)
 			section.appendChild(el)
 
 	def add_finding(self, finding: Finding) -> None:
@@ -576,199 +1008,187 @@ class Report:
 	def add_non_finding(self, non_finding: NonFinding) -> None:
 		self.add("nonFindings", non_finding)
 
+	def update_labels(self, labels) -> None:
+		meta_elements = self.doc.documentElement.getElementsByTagName("meta")
+		if len(meta_elements) == 0:
+			raise Exception("Report XML file misses <meta/> element")
+		meta_element = meta_elements[0]
 
-class ROSProject:
+		# get meta indent level
+		indent_level = 3
+		before_meta = meta_element.previousSibling
+		if (before_meta is None) or (before_meta.nodeType == before_meta.TEXT_NODE):
+			_indent_character = before_meta.nodeValue.splitlines().pop()
+		else:
+			_indent_character = INDENT_CHARACTER
 
-	def __init__(self, project_id: int) -> None:
-		self.gitlab_project = gitlab.projects.get(project_id)
-		self._findings = None
-		self._non_findings = None
-		self._conclusion = None
-		self._resultsinanutshell = None
-		self._futurework = None
+		labels_elements = meta_element.getElementsByTagName("labels")
+		if len(labels_elements) == 0:
+			labels_element = self.doc.createElement("labels")
+			meta_element.appendChild(self.doc.createTextNode(_indent_character))
+			meta_element.appendChild(labels_element)
+			meta_element.appendChild(self.doc.createTextNode("\n" + (_indent_character * (indent_level-2))))
+		else:
+			labels_element = labels_elements[0]
+		while labels_element.hasChildNodes():
+			labels_element.removeChild(labels_element.firstChild)
+		if len(labels) > 0:
+			labels_element.appendChild(self.doc.createTextNode("\n" + (_indent_character * (indent_level-1))))
+			for label in labels:
+				if not label.is_project_label:
+					continue
+				label_element = self.doc.createElement("label")
+				label_element.setAttribute("name", label.name)
+				label_element.setAttribute("color", label.color)
+				label_element.setAttribute("text", label.text_color)
+				if label.description is not None:
+					label_element.appendChild(self.doc.createTextNode(label.description))
+				labels_element.appendChild(self.doc.createTextNode(_indent_character))
+				labels_element.appendChild(label_element)
+				labels_element.appendChild(self.doc.createTextNode("\n" + (_indent_character * (indent_level-1))))
+
+
+class PentextProject(gitlab.v4.objects.projects.Project):
+
+	__module__ = "gitlab.v4.objects.projects"
+
+	def __init__(self, *args, **kwargs) -> None:
+		super().__init__(*args, **kwargs)
 		self.report = Report()
 
 	@property
 	def findings(self):
-		if self._findings is None:
-			self._findings = list(map(
-				self.readFindingFromIssue,
-				self.gitlab_project.issues.list(
-					state="opened",
-					labels=["finding"],
-					as_list=False
-				)
-			))
-		return self._findings
+		return self.get_report_assets(Finding, labels=["finding", *LABELS])
 
 	@property
 	def non_findings(self):
-		if self._non_findings is None:
-			self._non_findings = list(map(
-				lambda issue: NonFinding(
-					id=int(issue.id),
-					iid=int(issue.iid),
-					title=issue.title,
-					description=issue.description,
-					project=self
-				),
-				self.gitlab_project.issues.list(
-					state="opened",
-					labels=["non-finding"],
-					as_list=False
-				)
-			))
-		return self._non_findings
+		return self.get_report_assets(NonFinding, labels=["non-finding", *LABELS])
+
+	def get_report_assets(self, obj_cls, labels=LABELS, milestone=MILESTONE, **kwargs):
+		_obj_cls = self.issues._obj_cls
+		self.issues._obj_cls = curry_project_obj_cls(obj_cls, pentext_project=self)
+		for issue in self.issues.list(
+			state="opened",
+			milestone=milestone,
+			labels=labels,
+			**kwargs,
+			iterator=True
+		):
+			yield issue
+		self.issues._obj_cls = _obj_cls
 
 	@staticmethod
-	def __permissive_user_input(text: str) -> str:
-		return text.lower().replace(" ", "")
+	def __simplify(text: str) -> str:
+		return text.lower().replace(" ", "").strip().strip(":#")
+
+	def _match_milestone_and_labels(self, issue):
+		if len(issue.labels) and len(LABELS):
+			# always accept issues without any label
+			match = False
+			for label in LABELS:
+				if label in issue.labels:
+					match = True
+					break
+			if match is False:
+				# skip when issue has labels, but none matches the input query
+				return False
+		if MILESTONE is not None:
+			# always accept issues without milestone
+			if (issue.milestone is not None) and (issue.milestone != MILESTONE):
+				# skip when milestone is not empty or does not match
+				return False
+		return True
+
+	def search_report_section_parts(self, section_name):
+		kwargs = {
+			"search": section_name,
+			"in": "title"
+		}
+		issues = self.get_report_assets(
+			SectionPart,
+			labels=[],
+			milestone=None,
+			**kwargs
+		)
+		for issue in issues:
+			if self.__simplify(issue.title) != self.__simplify(section_name):
+				# skip when title does not match
+				continue
+			if not self._match_milestone_and_labels(issue):
+				continue
+			yield issue
+
+	def search_report_section(self, section_name, obj_cls):
+		parts = [*self.search_report_section_parts(section_name)]
+		return obj_cls(*parts, pentext_project=self)
+
+	def get_report_section_parts_by_labels(self, labels):
+		for issue in self.get_report_assets(SectionPart, labels=labels, milestone=None):
+			if self._match_milestone_and_labels(issue):
+				yield issue
+
+	def get_report_section_by_labels(self, labels, obj_cls):
+		parts = [*self.get_report_section_parts_by_labels(labels)]
+		return obj_cls(*parts, pentext_project=self)
 
 	@property
 	def conclusion(self):
-		_section = "Conclusion"
-		_simplify = self.__permissive_user_input
-		if self._conclusion is None:
-			args = dict()
-			args["state"] = "opened"
-			args["search"] = _section
-			args["in"] = "title"
-			issues = list(filter(
-				lambda issue: _simplify(issue.title) == _simplify(_section),
-				self.gitlab_project.issues.list(**args)
-			))
-			if len(issues) > 1:
-				raise Error(f"Multiple {_section} issues found on GitLab.")
-			text = issues[0].description if (len(issues) == 1) else None
-			self._conclusion = Conclusion(
-				text=text,
-				project=self
-			)
-		return self._conclusion
+		return self.search_report_section("Conclusion", Conclusion)
 
 	@property
 	def resultsinanutshell(self):
-		_section = "Results In A Nutshell"
-		_simplify = self.__permissive_user_input
-		if self._resultsinanutshell is None:
-			args = dict()
-			args["state"] = "opened"
-			args["search"] = _section
-			args["in"] = "title"
-			issues = list(filter(
-				lambda issue: _simplify(issue.title) == _simplify(_section),
-				self.gitlab_project.issues.list(**args)
-			))
-			if len(issues) > 1:
-				raise Error(f"Multiple {_section} issues found on GitLab.")
-			text = issues[0].description if (len(issues) == 1) else None
-			self._resultsinanutshell = ResultsInANutshell(
-				text=text,
-				project=self
-			)
-		return self._resultsinanutshell
+		return self.search_report_section("Results In A Nutshell", ResultsInANutshell)
 
 	@property
 	def futurework(self):
-		_section = "Future Work"
-		_simplify = self.__permissive_user_input
-		if self._futurework is None:
-			self._futurework = FutureWork(
-				items=self.gitlab_project.issues.list(
-					state="opened",
-					labels=["future-work"]
-				),
-				project=self
-			)
-		return self._futurework
+		return self.get_report_section_by_labels(["future-work"], FutureWork)
 
 	def write(self):
-		for finding in self.findings:
-			if finding.exists and SKIP_EXISTING:
-				continue
-			finding.write()
+		findings_by_severity = sorted(
+			self.findings,
+			key=lambda finding: get_threat_level_number(finding.threatlevel),
+			reverse=True
+		)
+		for finding in findings_by_severity:
+			if not finding.exists or (SKIP_EXISTING is False):
+				finding.write()
 			self.report.add_finding(finding)
 		for non_finding in self.non_findings:
-			if non_finding.exists and SKIP_EXISTING:
-				continue
-			non_finding.write();
+			if not non_finding.exists or (SKIP_EXISTING is False):
+				non_finding.write();
 			self.report.add_non_finding(non_finding)
 		self.conclusion.write()
 		self.resultsinanutshell.write()
 		self.futurework.write()
+		self.report.toggle_include_comments()
+
+		if options.include_labels is True:
+			self.report.update_labels(self.labels.list(iterator=True))
+
 		self.report.write()
-		print("ROS Project written")
-
-	def readFindingFromIssue(self, issue):
-		technicaldescription = ""
-		impact = ""
-		recommendation = ""
-		threatlevel = "Unknown"
-		type = "Unknown"
-		status = "none"
-		updates = []
-
-		i = 0
-		for discussion in issue.discussions.list(as_list=False):
-
-			notes = filter(
-				lambda note: note["system"] == False,
-				discussion.attributes["notes"]
-			)
-
-			try:
-				comment = next(notes)["body"]
-			except StopIteration:
-				# skip system events without notes
-				continue
-
-			i += 1
-
-			# the first comment is the technical description
-			# unless later found explicitly
-			if i == 1:
-				technicaldescription = comment
-
-			# other comments can have a meaning as well 
-			lines = comment.splitlines()
-			first_line = lines.pop(0).lower().strip().strip(":#")
-
-			# remove leading empty lines
-			while len(lines) and lines[0].strip() == "":
-				lines.pop(0)
-
-			if first_line == "recommendation":
-				recommendation = "\n".join(lines).strip()
-			elif first_line == "impact":
-				impact = "\n".join(lines)
-			elif first_line == "update":
-				updates.append("\n".join(lines))
-			elif first_line == "type":
-				type = lines[0].strip()
-			elif (first_line.replace(" ", "") == "technicaldescription"):
-				technicaldescription = "\n".join(lines)
-
-		for label in issue.labels:
-			if label.lower().startswith("threatlevel:") is True:
-				threatlevel = label.split(":", maxsplit=1)[1]
-			if label.lower().startswith("reteststatus:") is True:
-				status = label.split(":", maxsplit=1)[1]
-
-		return Finding(
-			id=int(issue.id),
-			iid=int(issue.iid),
-			title=issue.title,
-			description=issue.description,
-			technicaldescription=technicaldescription,
-			impact=impact,
-			updates=updates,
-			recommendation=recommendation,
-			threatlevel=threatlevel,
-			type=type,
-			status=status,
-			project=self
-		)
+		logging.info("ROS Project written")
 
 
-project = ROSProject(os.environ["CI_PROJECT_ID"])
-project.write()
+client.projects._obj_cls = PentextProject
+project = client.projects.get(os.environ["CI_PROJECT_ID"])
+
+def _resolve_internal_links(markdown_text: str) -> str:
+
+	def resolve_link(match):
+		try:
+			target_finding = next(filter(
+				lambda finding: finding.iid == int(match.group(1)),
+				project.findings
+			))
+			return f'<a href="#{target_finding.slug}"/>';
+		except StopIteration:
+			return f"{match.group()}"
+
+	return re.sub(
+		r'#(\d+)',
+		resolve_link,
+		markdown_text
+	)
+
+if __name__ == "__main__":
+	project.write()
