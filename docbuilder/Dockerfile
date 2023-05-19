@@ -1,7 +1,7 @@
 ARG FOP_VERSION=2.7
 ARG SAXON_VERSION=10.5
 
-FROM eclipse-temurin:19 as download-and-extract-tools
+FROM eclipse-temurin:20 as download-and-extract-tools
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
@@ -20,7 +20,7 @@ RUN tar -xf fop-${FOP_VERSION}-bin.tar.gz
 # use strict to force error exit code when jar is unsigned
 RUN jarsigner -verify -strict Saxon-HE-${SAXON_VERSION}.jar
 
-FROM eclipse-temurin:19
+FROM eclipse-temurin:20
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
