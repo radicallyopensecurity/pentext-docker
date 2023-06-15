@@ -947,8 +947,10 @@ class Report(PentextXMLFile):
 	) -> None:
 
 		if section is None:
-			self.toggle_include_comments(self.get_section("findings"))
-			self.toggle_include_comments(self.get_section("nonFindings"))
+			for section_name in ["findings", "nonFindings"]:
+				target = self.get_section(section_name)
+				if target is not None:
+					self.toggle_include_comments(target)
 			return
 
 		for item in section.childNodes:
