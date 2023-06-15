@@ -989,11 +989,7 @@ class Report(PentextXMLFile):
 		el.setAttribute("href", href)
 
 		if section is None:
-			logging.warning(
-				f"A {section_name} section was not found in the XML file."
-				f" - {section_name} will not be included."
-			)
-			return
+			raise Exception(f"Cannot add {section_name} - section not found in XML")
 
 		_line_prefix = self.doc.createTextNode(line_prefix)
 		if (section.lastChild.nodeType == doc.TEXT_NODE):
