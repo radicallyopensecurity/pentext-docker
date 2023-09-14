@@ -54,6 +54,7 @@ Convert quickscope into a quotation.
 
 🚨⚠️ **Security warning**: `GITLAB_TOKEN` will be accessible from the [convert](./convert/) container and your private EyeDP Cookie is not supposed to be shared or stored on disk. The [proxy](./proxy/) setup is a hack to separate the convert container from the Internet and local network and from the secret EyeDP Cookie, but must be used with caution. The credential will be built into the image and stored on disk. Only use on a host you fully trust and nobody else has access to.
 
+### Configure and run EyeDP Proxy
 ```sh
 cp .env.sample .env
 # optionally set a fixed GITLAB_TOKEN (read_api, read_repo)
@@ -62,6 +63,8 @@ echo 'EXTRA_COOKIES=_eyed_p_session={{MY_EYEDP_COOKIE}}' >> .env
 docker compose build
 docker compose up -d
 ```
+
+### Convert GitLab project to Pentext XML
 
 ```sh
 export GITLAB_PROJECT_ID=1234
@@ -72,6 +75,14 @@ docker compose run --rm \
 	convert
 ```
 
+### Build PDF from local Pentext XML
+
+```sh
+export PENTEXT_DIR=/path/to/my-pentest
+docker compose run --rm \
+	-v "$PENTEXT_DIR:/pentext" \
+	docbuilder
+```
 
 ## License
 
