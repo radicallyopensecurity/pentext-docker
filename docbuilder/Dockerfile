@@ -8,8 +8,7 @@ ARG SAXON_VERSION
 RUN apt-get update
 RUN apt-get upgrade -y
 RUN apt-get install -y gnupg wget
-# safely download https://downloads.apache.org/xmlgraphics/fop/KEYS and verify the keys in it once, outside the docker.
-ADD KEYS .
+RUN wget https://downloads.apache.org/xmlgraphics/fop/KEYS
 RUN gpg --import KEYS
 RUN wget https://archive.apache.org/dist/xmlgraphics/fop/binaries/fop-${FOP_VERSION}-bin.tar.gz
 RUN wget https://archive.apache.org/dist/xmlgraphics/fop/binaries/fop-${FOP_VERSION}-bin.tar.gz.asc
