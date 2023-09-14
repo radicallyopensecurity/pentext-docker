@@ -56,7 +56,7 @@ Convert quickscope into a quotation.
 
 ```sh
 cp .env.sample .env
-# optionally set a fixed GITLAB_TOKEN
+# optionally set a fixed GITLAB_TOKEN (read_api, read_repo)
 echo 'GITLAB_TOKEN={{MY_GITLAB_TOKEN}}' >> .env
 echo 'EXTRA_COOKIES=_eyed_p_session={{MY_EYEDP_COOKIE}}' >> .env
 docker compose build
