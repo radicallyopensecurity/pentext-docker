@@ -486,7 +486,7 @@ class Finding(ProjectIssuePentextXMLFile):
 
 	@property
 	def updates(self) -> typing.List[FindingIssueNote]:
-		return [note.markdown for note in self.get_note_by_type("update")]
+		return self.get_note_by_type("update")
 
 	@property
 	def status(self) -> str:
@@ -508,10 +508,19 @@ class Finding(ProjectIssuePentextXMLFile):
 				yield note
 
 	@staticmethod
-	def get_dom_section(root, tagName) -> xml.dom.minidom.Element:
+	def get_dom_section(*args, **kwargs) -> xml.dom.minidom.Element:
+		try:
+			return next(Finding.get_dom_sections(*args, **kwargs))
+		except StopIteration:
+			return None
+
+	@staticmethod
+	def get_dom_sections(root, tagName, slug=None) -> xml.dom.minidom.Element:
 		for node in root.childNodes:
 			if node.nodeType == node.ELEMENT_NODE and node.tagName == tagName:
-				return node
+				if (slug is not None) and (node.getAttribute("id") != slug):
+					continue
+				yield node
 
 	@property
 	def doc(self):
@@ -551,9 +560,29 @@ class Finding(ProjectIssuePentextXMLFile):
 		self._append_section(doc, root, "technicaldescription", FindingMergeStrategy.TECHNICALDESCRIPTION)
 		self._append_section(doc, root, "impact", FindingMergeStrategy.IMPACT)
 		self._append_section(doc, root, "recommendation", FindingMergeStrategy.RECOMMENDATION, unwrap=False)
+
+		updates = self.updates
+		update_slugs = [
+			f"gitlab/project/{os.environ['CI_PROJECT_ID']}/issues/{update.issue_iid}/note/{update.id}"
+			for update in updates
+		]
+
+		if (FindingMergeStrategy.RETEST in self.strategy):
+			# remove all matching tags without slug (cleanup from prior conversion revision)
+			for other_section in self.get_dom_sections(root, "update"):
+				if not other_section.hasAttribute("slug") or (other_section.slug not in update_slugs):
+					if (other_section.previousSibling.nodeType == doc.TEXT_NODE):
+						root.removeChild(other_section.previousSibling)
+					root.removeChild(other_section)
+
 		for update in self.updates:
+			slug = f"gitlab/project/{os.environ['CI_PROJECT_ID']}/issues/{update.issue_iid}/note/{update.id}"
 			# there can be multiple update sections
-			self._append_section(doc, root, "update", FindingMergeStrategy.RETEST, update)
+			self._append_section(doc, root, "update",
+				FindingMergeStrategy.RETEST,
+				update.markdown,
+				slug=slug
+			)
 
 		labels = self.get_dom_section(root, "labels")
 		if options.include_labels and (not exists or (FindingMergeStrategy.LABELS in self.strategy)):
@@ -607,9 +636,11 @@ class Finding(ProjectIssuePentextXMLFile):
 		update_strategy,
 		markdown_text=None,
 		level=1,
-		unwrap=True
+		unwrap=True,
+		slug=None,
+		**sectionAttributes
 	) -> None:
-		section = self.get_dom_section(parentNode, name)
+		section = self.get_dom_section(parentNode, name, slug)
 		if section is None:
 			section = doc.createElement(name)
 			parentNode.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
@@ -621,6 +652,14 @@ class Finding(ProjectIssuePentextXMLFile):
 		else:
 			while section.hasChildNodes():
 				section.removeChild(section.firstChild)
+
+		if slug is not None:
+			section.setAttribute("id", slug)
+		elif section.hasAttribute("id"):
+			section.removeAttribute("id")
+
+		for name, value in sectionAttributes.keys():
+			section.setAttribute(name, value)
 
 		if markdown_text is None:
 			_value = getattr(self, name)
@@ -1151,10 +1190,15 @@ class PentextProject(gitlab.v4.objects.projects.Project):
 			if not finding.exists or (SKIP_EXISTING is False):
 				finding.write()
 			self.report.add_finding(finding)
-		for non_finding in self.non_findings:
-			if not non_finding.exists or (SKIP_EXISTING is False):
-				non_finding.write();
-			self.report.add_non_finding(non_finding)
+
+		non_findings = self.non_findings
+		if non_findings is not None:
+			logging.warning("Non-findings section does not exist in report.xml")
+			for non_finding in self.non_findings:
+				if not non_finding.exists or (SKIP_EXISTING is False):
+					non_finding.write();
+				self.report.add_non_finding(non_finding)
+
 		self.conclusion.write()
 		self.resultsinanutshell.write()
 		self.futurework.write()
