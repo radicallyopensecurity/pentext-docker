@@ -581,7 +581,9 @@ class Finding(ProjectIssuePentextXMLFile):
 				self._append_section(doc, root, "update",
 					FindingMergeStrategy.RETEST,
 					update.markdown,
-					slug=slug
+					slug=slug,
+					created_at=update.created_at,
+					updated_at=update.updated_at
 				)
 
 		labels = self.get_dom_section(root, "labels")
