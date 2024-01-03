@@ -570,19 +570,19 @@ class Finding(ProjectIssuePentextXMLFile):
 		if (FindingMergeStrategy.RETEST in self.strategy):
 			# remove all matching tags without slug (cleanup from prior conversion revision)
 			for other_section in self.get_dom_sections(root, "update"):
-				if not other_section.hasAttribute("slug") or (other_section.slug not in update_slugs):
+				if not other_section.hasAttribute("id") or (other_section.getAttribute("id") not in update_slugs):
 					if (other_section.previousSibling.nodeType == doc.TEXT_NODE):
 						root.removeChild(other_section.previousSibling)
 					root.removeChild(other_section)
 
-		for update in self.updates:
-			slug = f"gitlab/project/{os.environ['CI_PROJECT_ID']}/issues/{update.issue_iid}/note/{update.id}"
-			# there can be multiple update sections
-			self._append_section(doc, root, "update",
-				FindingMergeStrategy.RETEST,
-				update.markdown,
-				slug=slug
-			)
+			for update in self.updates:
+				slug = f"gitlab/project/{os.environ['CI_PROJECT_ID']}/issues/{update.issue_iid}/note/{update.id}"
+				# there can be multiple update sections
+				self._append_section(doc, root, "update",
+					FindingMergeStrategy.RETEST,
+					update.markdown,
+					slug=slug
+				)
 
 		labels = self.get_dom_section(root, "labels")
 		if options.include_labels and (not exists or (FindingMergeStrategy.LABELS in self.strategy)):
@@ -658,7 +658,7 @@ class Finding(ProjectIssuePentextXMLFile):
 		elif section.hasAttribute("id"):
 			section.removeAttribute("id")
 
-		for name, value in sectionAttributes.keys():
+		for name, value in sectionAttributes.items():
 			section.setAttribute(name, value)
 
 		if markdown_text is None:
