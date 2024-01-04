@@ -574,7 +574,7 @@ class Finding(ProjectIssuePentextXMLFile):
 		if (FindingMergeStrategy.RETEST in self.strategy):
 			# remove all matching tags without slug (cleanup from prior conversion revision)
 			for other_section in self.get_dom_sections(root, "update"):
-				if not other_section.hasAttribute("id") or (other_section.getAttribute("id") not in update_slugs):
+				if (other_section.hasAttribute("id") is False) or (other_section.getAttribute("id") not in update_slugs):
 					if (other_section.previousSibling.nodeType == doc.TEXT_NODE):
 						root.removeChild(other_section.previousSibling)
 					root.removeChild(other_section)
