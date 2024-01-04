@@ -7,6 +7,9 @@ import pathlib
 import enum
 import argparse
 import functools
+import datetime
+import pytz
+import calendar
 import xml.dom.minidom
 import xml.etree.ElementTree
 import xml.parsers.expat
@@ -82,6 +85,7 @@ SKIP_UNMODIFIED_TODO=env_flag("SKIP_UNMODIFIED_TODO", True)
 GITLAB_TOKEN=os.environ["PROJECT_ACCESS_TOKEN"]
 COOKIE = os.environ.get("COOKIE")
 INDENT_CHARACTER = "  "
+TIMEZONE = os.environ.get("TIMEZONE", "Europe/Amsterdam")
 
 MILESTONE = os.environ.get("MILESTONE")
 LABELS = list(filter(
@@ -577,13 +581,20 @@ class Finding(ProjectIssuePentextXMLFile):
 
 			for update in self.updates:
 				slug = f"gitlab/project/{os.environ['CI_PROJECT_ID']}/issues/{update.issue_iid}/note/{update.id}"
+
+				# convert local date
+				utc_date = datetime.datetime.strptime(update.created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+				timestamp = calendar.timegm(utc_date.timetuple())
+				local_date = datetime.datetime.fromtimestamp(timestamp, tz=pytz.timezone(TIMEZONE))
+
 				# there can be multiple update sections
 				self._append_section(doc, root, "update",
 					FindingMergeStrategy.RETEST,
 					update.markdown,
 					slug=slug,
 					created_at=update.created_at,
-					updated_at=update.updated_at
+					updated_at=update.updated_at,
+					date=local_date.strftime("%Y-%m-%d %H:%M")
 				)
 
 		labels = self.get_dom_section(root, "labels")
