@@ -68,6 +68,11 @@ class FindingMergeStrategy(enum.IntFlag):
 			FindingMergeStrategy(0)
 		)
 
+def log_pentext_error(message, hint=None):
+	logging.error(message);
+	if hint is not None:
+		for line in hint.splitlines():
+			logging.error(f"  {line}")
 
 def _truthy(value: typing.Union[str, int], default: bool=False) -> bool:
 	_value = str(value).lower()
@@ -80,6 +85,7 @@ def env_flag(name: str, default: bool) -> bool:
 	state = _truthy(os.environ.get(name, default))
 	return state
 
+CI_PROJECT_URL=os.getenv("CI_PROJECT_URL", "/");
 SKIP_EXISTING=env_flag("SKIP_EXISTING", True)
 SKIP_UNMODIFIED_TODO=env_flag("SKIP_UNMODIFIED_TODO", True)
 GITLAB_TOKEN=os.environ["PROJECT_ACCESS_TOKEN"]
@@ -157,6 +163,38 @@ pathlib.Path("non-findings").mkdir(parents=True, exist_ok=True)
 class InvalidUploadPathException(Exception):
 	pass
 
+
+class HTMLParsingError(Exception):
+
+	LINE_RADIUS = 1
+	HIGHLIGHT_RADIUS = 0
+
+	def __init__(self, msg: str, position: typing.Tuple[int, int], html: str) -> None:
+		super().__init__(msg)
+		self.position = position
+		self.html = html
+	
+	@property
+	def surrounding_lines(self):
+		error_line = self.position[0]-1
+		error_column = self.position[1]-1
+		lines = self.html.splitlines()
+
+		# highlight text with distance around issue
+		_line = lines[error_line]
+		_line = "".join([
+			_line[0:error_column],
+			"\033[91m",
+			_line[error_column],#_line[error_column-self.HIGHLIGHT_RADIUS-1:error_column+self.HIGHLIGHT_RADIUS],
+			"\033[0m",
+			_line[error_column+1:]
+		])
+		lines[error_line] = _line
+
+		# return including surrounding lines
+		return "\n".join(lines[error_line-self.LINE_RADIUS:error_line+self.LINE_RADIUS+1])
+
+
 def curry_project_obj_cls(obj_cls, pentext_project):
 	def _obj_cls(*args, **kwargs):
 		return obj_cls(*args, **kwargs, pentext_project=pentext_project)
@@ -185,7 +223,15 @@ def _remove_syntax_highlighting(markdown_text: str) -> str:
 def _indent_html(html, level):
 	if not hasattr(xml.etree.ElementTree, "indent"):
 		return html
-	htmlTree = xml.etree.ElementTree.fromstring(f"<root>{html}</root>")
+
+	_html = f"<root>\n{html}\n</root>" # can parse only one root element
+	error = None
+	try:
+		htmlTree = xml.etree.ElementTree.fromstring(_html)
+	except xml.etree.ElementTree.ParseError as err:
+		error = HTMLParsingError(err.msg, err.position, _html)
+	if error is not None:
+		raise error
 	xml.etree.ElementTree.indent(htmlTree, space=INDENT_CHARACTER, level=level)
 	return xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
 
@@ -213,11 +259,13 @@ def markdown(
 	# post-processing
 	html = _indent_html(html, level)
 	html = _fix_code_blocks(html)
+	
 
 	return html
 
 def markdown_to_dom(*args, **kwargs) -> typing.List[xml.dom.minidom.Element]:
-	dom = xml.dom.minidom.parseString(markdown(*args, **kwargs))
+	html = markdown(*args, **kwargs)
+	dom = xml.dom.minidom.parseString(html)
 	return dom.firstChild.childNodes
 
 def _is_pentext_label(label) -> bool:
@@ -653,7 +701,14 @@ class Finding(ProjectIssuePentextXMLFile):
 		slug=None,
 		**sectionAttributes
 	) -> None:
-		section = self.get_dom_section(parentNode, name, slug)
+		try:
+			section = self.get_dom_section(parentNode, name, slug)
+		except Exception as err:
+			log_pentext_error(
+				f"Parsing finding {self.iid} section {name} from XML failed",
+				hint=f"Spot the issue in {self.relative_path}"
+			)
+			raise err
 		if section is None:
 			section = doc.createElement(name)
 			parentNode.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
@@ -674,11 +729,31 @@ class Finding(ProjectIssuePentextXMLFile):
 		for name, value in sectionAttributes.items():
 			section.setAttribute(name, value)
 
+		issue_url = urllib.parse.urljoin( # used in error hints
+			CI_PROJECT_URL,
+			f"issues/{self.iid}"
+		).strip()
+
 		if markdown_text is None:
 			_value = getattr(self, name)
 			# description is native value str
 			markdown_text = _value if isinstance(_value, str) else _value.markdown
-		section_nodes = markdown_to_dom(markdown_text, self.iid, level=level)
+		try:
+			section_nodes = markdown_to_dom(markdown_text, self.iid, level=level)
+		except HTMLParsingError as err:
+			log_pentext_error(
+				f"finding {self.iid} section '{name}' has an HTML markup error after converting from Markdown", (
+					f"Spot the issue in {issue_url}\nAlso check for strings invisible in the preview, such as HTML tags"
+					f"\n\n{err.surrounding_lines}"
+				)
+			)
+			raise err
+		except Exception as err:
+			log_pentext_error(
+				f"Markdown to HTML conversion of Finding {self.iid} section '{name}' failed",
+				f"Spot the issue in {issue_url}"
+			)
+			raise err
 		if unwrap is True:
 			section_nodes = self.__unwrap_single_paragraph_node(section_nodes)
 
