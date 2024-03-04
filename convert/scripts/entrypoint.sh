@@ -12,7 +12,7 @@ fi
 
 set -e
 set -x
-python3 /scripts/convert.py ${EXTRA_ARGS}
+python3 ${PYTHON_ARGS} /scripts/convert.py ${EXTRA_ARGS}
 
 ls -al findings/
 ls -al non-findings/
