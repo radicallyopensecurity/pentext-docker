@@ -10,6 +10,7 @@ import functools
 import datetime
 from zoneinfo import ZoneInfo
 import calendar
+import unicodedata
 import xml.dom.minidom
 import xml.etree.ElementTree
 import xml.parsers.expat
@@ -177,15 +178,20 @@ class HTMLParsingError(Exception):
 	@property
 	def surrounding_lines(self):
 		error_line = self.position[0]-1
-		error_column = self.position[1]-1
+		error_column = self.position[1]
 		lines = self.html.splitlines()
 
 		# highlight text with distance around issue
 		_line = lines[error_line]
+
+		error_character = _line[error_column]
+		if unicodedata.category(error_character)[0] == "C":
+			error_character = hex(ord(error_character))
+
 		_line = "".join([
 			_line[0:error_column],
 			"\033[91m",
-			_line[error_column],#_line[error_column-self.HIGHLIGHT_RADIUS-1:error_column+self.HIGHLIGHT_RADIUS],
+			error_character,
 			"\033[0m",
 			_line[error_column+1:]
 		])
