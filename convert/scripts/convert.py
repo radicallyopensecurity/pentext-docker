@@ -8,7 +8,7 @@ import enum
 import argparse
 import functools
 import datetime
-import pytz
+from zoneinfo import ZoneInfo
 import calendar
 import xml.dom.minidom
 import xml.etree.ElementTree
@@ -585,7 +585,7 @@ class Finding(ProjectIssuePentextXMLFile):
 				# convert local date
 				utc_date = datetime.datetime.strptime(update.created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
 				timestamp = calendar.timegm(utc_date.timetuple())
-				local_date = datetime.datetime.fromtimestamp(timestamp, tz=pytz.timezone(TIMEZONE))
+				local_date = datetime.datetime.fromtimestamp(timestamp, tz=ZoneInfo(TIMEZONE))
 
 				# there can be multiple update sections
 				self._append_section(doc, root, "update",
