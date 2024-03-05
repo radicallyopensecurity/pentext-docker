@@ -2,6 +2,7 @@
 import typing
 import re
 import os
+import sys
 import os.path
 import pathlib
 import enum
@@ -27,6 +28,13 @@ import gitlab.client
 import gitlab.base
 import gitlab.v4.objects.issues
 import gitlab.v4.objects.notes
+
+from junit import PentextUnit
+pentext_unit = PentextUnit()
+
+# determines the final return status
+#global has_errors
+has_errors = False
 
 class ThreatLevels(enum.IntEnum):
 	UNKNOWN = 0
@@ -70,6 +78,8 @@ class FindingMergeStrategy(enum.IntFlag):
 		)
 
 def log_pentext_error(message, hint=None):
+	global has_errors
+	has_errors = True
 	logging.error(message);
 	if hint is not None:
 		for line in hint.splitlines():
@@ -236,6 +246,7 @@ def _indent_html(html, level):
 		htmlTree = xml.etree.ElementTree.fromstring(_html)
 	except xml.etree.ElementTree.ParseError as err:
 		error = HTMLParsingError(err.msg, err.position, _html)
+		raise error
 	if error is not None:
 		raise error
 	xml.etree.ElementTree.indent(htmlTree, space=INDENT_CHARACTER, level=level)
@@ -373,7 +384,12 @@ class PentextXMLFile:
 		self._doc = xml.dom.minidom.parse(self.relative_path)
 
 	def write(self) -> None:
-		prettyxml = to_prettyxml(self.processed_doc)
+		prettyxml = None
+		try:
+			prettyxml = to_prettyxml(self.processed_doc)
+		except Exception:
+			logging.error(f"failed to obtain XML content of {self.relative_path}")
+			return
 		with open(self.relative_path, "w", encoding="UTF-8") as file:
 			logging.info(f"writing {self.relative_path}")
 			file.write(prettyxml)
@@ -582,6 +598,17 @@ class Finding(ProjectIssuePentextXMLFile):
 
 	@property
 	def doc(self):
+		status = dict(
+			errors=0,
+			failures=0,
+			skipped=0,
+			tests=0
+		)
+		global has_errors
+		global pentext_unit
+
+		testsuite_name = f"Finding {self.iid}"
+
 		level = 1
 		exists = self.exists
 		if exists is True:
@@ -614,10 +641,73 @@ class Finding(ProjectIssuePentextXMLFile):
 				title.removeChild(title.firstChild)
 			title.appendChild(doc.createTextNode(self.title))
 
-		self._append_section(doc, root, "description", FindingMergeStrategy.DESCRIPTION)
-		self._append_section(doc, root, "technicaldescription", FindingMergeStrategy.TECHNICALDESCRIPTION)
-		self._append_section(doc, root, "impact", FindingMergeStrategy.IMPACT)
-		self._append_section(doc, root, "recommendation", FindingMergeStrategy.RECOMMENDATION, unwrap=False)
+		# Description
+		section_status = None
+		try:
+			added = self._append_section(doc, root, "description", FindingMergeStrategy.DESCRIPTION)
+			if added is False:
+				status["skipped"] = status["skipped"] + 1
+				section_status = doc.createElement("skipped")
+				section_status.appendChild(self.doc.createTextNode("untouched"))
+		except Exception as err:
+			section_status = doc.createElement("error")
+			section_status.appendChild(doc.createTextNode(str(err)))
+			status["errors"] = status["errors"] + 1
+			has_errors = True
+		finally:
+			status["tests"] = status["tests"] + 1
+			pentext_unit.add_testcase(testsuite_name, "description", self.relative_path, section_status)
+
+		# Technical Description
+		section_status = None
+		try:
+			added = self._append_section(doc, root, "technicaldescription", FindingMergeStrategy.TECHNICALDESCRIPTION)
+			if added is False:
+				status["skipped"] = status["skipped"] + 1
+				section_status = doc.createElement("skipped")
+				section_status.appendChild(self.doc.createTextNode("untouched"))
+		except Exception as err:
+			section_status = doc.createElement("error")
+			section_status.appendChild(doc.createTextNode(str(err)))
+			status["errors"] = status["errors"] + 1
+			has_errors = True
+		finally:
+			status["tests"] = status["tests"] + 1
+			pentext_unit.add_testcase(testsuite_name, "technicaldescription", self.relative_path, section_status)
+
+		# Impact
+		section_status = None
+		try:
+			added = self._append_section(doc, root, "impact", FindingMergeStrategy.IMPACT)
+			if added is False:
+				status["skipped"] = status["skipped"] + 1
+				section_status = doc.createElement("skipped")
+				section_status.appendChild(self.doc.createTextNode("untouched"))
+		except Exception as err:
+			section_status = doc.createElement("error")
+			section_status.appendChild(doc.createTextNode(str(err)))
+			status["errors"] = status["errors"] + 1
+			has_errors = True
+		finally:
+			status["tests"] = status["tests"] + 1
+			pentext_unit.add_testcase(testsuite_name, "impact", self.relative_path, section_status)
+
+		# Recommendation
+		section_status = None
+		try:
+			added = self._append_section(doc, root, "recommendation", FindingMergeStrategy.RECOMMENDATION, unwrap=False)
+			if added is False:
+				status["skipped"] = status["skipped"] + 1
+				section_status = doc.createElement("skipped")
+				section_status.appendChild(self.doc.createTextNode("untouched"))
+		except Exception as err:
+			section_status = doc.createElement("error")
+			section_status.appendChild(doc.createTextNode(str(err)))
+			status["errors"] = status["errors"] + 1
+			has_errors = True
+		finally:
+			status["tests"] = status["tests"] + 1
+			pentext_unit.add_testcase(testsuite_name, "recommendation", self.relative_path, section_status)
 
 		updates = self.updates
 		update_slugs = [
@@ -669,6 +759,10 @@ class Finding(ProjectIssuePentextXMLFile):
 				labels.appendChild(label)
 			if len(self.extra_labels):
 				labels.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
+
+		testsuite = pentext_unit.get_or_add_testsuite(testsuite_name)
+		for [k, v] in status.items():
+			testsuite.setAttribute(k, str(v))
 
 		return doc
 
@@ -722,7 +816,7 @@ class Finding(ProjectIssuePentextXMLFile):
 			parentNode.appendChild(doc.createTextNode("\n"))
 		elif update_strategy not in self.strategy:
 			logging.debug(f"Finding section {name} exists but skipped because update strategy {update_strategy} is not enabled")
-			return
+			return False
 		else:
 			while section.hasChildNodes():
 				section.removeChild(section.firstChild)
@@ -737,7 +831,7 @@ class Finding(ProjectIssuePentextXMLFile):
 
 		issue_url = urllib.parse.urljoin( # used in error hints
 			CI_PROJECT_URL,
-			f"issues/{self.iid}"
+			f"-/issues/{self.iid}"
 		).strip()
 
 		if markdown_text is None:
@@ -760,6 +854,7 @@ class Finding(ProjectIssuePentextXMLFile):
 				f"Spot the issue in {issue_url}"
 			)
 			raise err
+
 		if unwrap is True:
 			section_nodes = self.__unwrap_single_paragraph_node(section_nodes)
 
@@ -767,6 +862,8 @@ class Finding(ProjectIssuePentextXMLFile):
 			node = section_nodes.pop(0)
 			node.parentNode = None
 			section.appendChild(node)
+
+		return True
 
 	@property
 	def relative_path(self):
@@ -1283,6 +1380,10 @@ class PentextProject(gitlab.v4.objects.projects.Project):
 		for finding in findings_by_severity:
 			if not finding.exists or (SKIP_EXISTING is False):
 				finding.write()
+			else:
+				testsuite = pentext_unit.get_or_add_testsuite(finding.iid)
+				testsuite.setAttribute("tests", "0")
+				testsuite.setAttribute("skipped", "1")
 			self.report.add_finding(finding)
 
 		non_findings = self.non_findings
@@ -1328,3 +1429,7 @@ def _resolve_internal_links(markdown_text: str) -> str:
 
 if __name__ == "__main__":
 	project.write()
+	pentext_unit.write()
+	if has_errors is True:
+		logging.error("Exited with errors")
+		sys.exit(1)

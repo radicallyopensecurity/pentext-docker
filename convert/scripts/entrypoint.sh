@@ -14,9 +14,9 @@ set -e
 set -x
 python3 ${PYTHON_ARGS} /scripts/convert.py ${EXTRA_ARGS}
 
-ls -al findings/
-ls -al non-findings/
-ls -alR uploads/
+# ls -al findings/
+# ls -al non-findings/
+# ls -alR uploads/
 
 # CVE-2023-21036 - Acropalypse
 # Sanitize all images
