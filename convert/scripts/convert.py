@@ -224,7 +224,7 @@ def _indent_html(html, level):
 	if not hasattr(xml.etree.ElementTree, "indent"):
 		return html
 
-	_html = f"<root>\n{html}\n</root>" # can parse only one root element
+	_html = f"<root>\n{html.strip()}\n</root>" # can parse only one root element
 	error = None
 	try:
 		htmlTree = xml.etree.ElementTree.fromstring(_html)
