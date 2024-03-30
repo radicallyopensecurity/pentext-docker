@@ -648,7 +648,7 @@ class Finding(ProjectIssuePentextXMLFile):
 			if added is False:
 				status["skipped"] = status["skipped"] + 1
 				section_status = doc.createElement("skipped")
-				section_status.appendChild(self.doc.createTextNode("untouched"))
+				section_status.appendChild(doc.createTextNode("untouched"))
 		except Exception as err:
 			section_status = doc.createElement("error")
 			section_status.appendChild(doc.createTextNode(str(err)))
@@ -665,7 +665,7 @@ class Finding(ProjectIssuePentextXMLFile):
 			if added is False:
 				status["skipped"] = status["skipped"] + 1
 				section_status = doc.createElement("skipped")
-				section_status.appendChild(self.doc.createTextNode("untouched"))
+				section_status.appendChild(doc.createTextNode("untouched"))
 		except Exception as err:
 			section_status = doc.createElement("error")
 			section_status.appendChild(doc.createTextNode(str(err)))
@@ -682,7 +682,7 @@ class Finding(ProjectIssuePentextXMLFile):
 			if added is False:
 				status["skipped"] = status["skipped"] + 1
 				section_status = doc.createElement("skipped")
-				section_status.appendChild(self.doc.createTextNode("untouched"))
+				section_status.appendChild(doc.createTextNode("untouched"))
 		except Exception as err:
 			section_status = doc.createElement("error")
 			section_status.appendChild(doc.createTextNode(str(err)))
@@ -699,7 +699,7 @@ class Finding(ProjectIssuePentextXMLFile):
 			if added is False:
 				status["skipped"] = status["skipped"] + 1
 				section_status = doc.createElement("skipped")
-				section_status.appendChild(self.doc.createTextNode("untouched"))
+				section_status.appendChild(doc.createTextNode("untouched"))
 		except Exception as err:
 			section_status = doc.createElement("error")
 			section_status.appendChild(doc.createTextNode(str(err)))
