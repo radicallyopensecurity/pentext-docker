@@ -10,6 +10,10 @@ if [ "${INCLUDE_LABELS}" != "" ]; then
 	EXTRA_ARGS="$EXTRA_ARGS --include-labels"
 fi
 
+if [ "${HIGHLIGHT_SYNTAX}" != "" ]; then
+	EXTRA_ARGS="$EXTRA_ARGS --highlight-syntax"
+fi
+
 set -e
 set -x
 python3 ${PYTHON_ARGS} /scripts/convert.py ${EXTRA_ARGS}

@@ -125,6 +125,12 @@ parser.add_argument(
 	required=False,
 	action=argparse.BooleanOptionalAction
 )
+parser.add_argument(
+	'--highlight-syntax',
+	default=False,
+	required=False,
+	action=argparse.BooleanOptionalAction
+)
 options = parser.parse_args()
 
 # Standard env variable for the base URL of the GitLab instance,
@@ -224,33 +230,59 @@ def to_prettyxml(doc):
 	output = re.sub(r"\n*$", "\n", output)
 	return output
 
-_p_pre_code_open = re.compile(r"<pre>[\s\r\n]*<code>[\s\r\n]*", re.MULTILINE)
-_p_pre_code_close = re.compile(r"[\s\r\n]*</code>[\s\r\n]*</pre>", re.MULTILINE)
-_p_syntax_highlighting = re.compile(r"```(.+)$", re.MULTILINE)
+_p_pre_code_open = r"<pre>[\s\r\n]*<code>[\s\r\n]*"
+_p_pre_code_close = r"[\s\r\n]*</code>[\s\r\n]*</pre>"
+p_pre_code_open = re.compile(_p_pre_code_open, re.MULTILINE)
+p_pre_code_close = re.compile(_p_pre_code_close, re.MULTILINE)
+p_syntax_highlighting = re.compile(r"^```(.+)$", re.MULTILINE)
+p_hidden_links = re.compile(r"^\s*<a [\>]* aria-hidden=\"true\"\s?/>\s*\n", re.MULTILINE)
 
 def _fix_code_blocks(html: str) -> str:
-	html = re.sub(_p_pre_code_open, "<pre><code>", html)
-	html = re.sub(_p_pre_code_close, "</code></pre>", html)
+	html = re.sub(p_pre_code_open, "<pre><code>", html)
+	html = re.sub(p_pre_code_close, "</code></pre>", html)
 	return html
 
 def _remove_syntax_highlighting(markdown_text: str) -> str:
-	return re.sub(_p_syntax_highlighting, "```", markdown_text)
+	# simply remove the syntax definition
+	return re.sub(p_syntax_highlighting, "```", markdown_text)
 
-def _indent_html(html, level):
-	if not hasattr(xml.etree.ElementTree, "indent"):
-		return html
+def _remove_hidden_links(html: str) -> str:
+	# simply remove the syntax definition
+	return re.sub(p_hidden_links, "", html)
 
+def _dom_to_html(htmlTree: xml.etree.ElementTree) -> str:
+	return xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
+
+def _html_to_dom(html: str) -> xml.etree.ElementTree.Element:
 	_html = f"<root>\n{html.strip()}\n</root>" # can parse only one root element
 	error = None
 	try:
-		htmlTree = xml.etree.ElementTree.fromstring(_html)
+		return xml.etree.ElementTree.fromstring(_html)
 	except xml.etree.ElementTree.ParseError as err:
 		error = HTMLParsingError(err.msg, err.position, _html)
 		raise error
-	if error is not None:
-		raise error
-	xml.etree.ElementTree.indent(htmlTree, space=INDENT_CHARACTER, level=level)
-	return xml.etree.ElementTree.tostring(htmlTree).decode("UTF-8")
+
+# Inspired by https://github.com/python/cpython/blob/bfc57d43d8766120ba0c8f3f6d7b2ac681a81d8a/Lib/xml/etree/ElementTree.py#L1140
+def _indent(tree: xml.etree.ElementTree.Element, level: int=0) -> None:
+	indentations = ["\n" + level * INDENT_CHARACTER]
+	def _indent_children(elem, level):
+		child_level = level + 1
+		try:
+			child_indentation = indentations[child_level]
+		except IndexError:
+			child_indentation = indentations[level] + INDENT_CHARACTER
+			indentations.append(child_indentation)
+		if not elem.text or not elem.text.strip():
+			elem.text = child_indentation
+		for child in elem:
+			# ignore pre elements
+			if (child.tag != "pre") and len(child):
+				_indent_children(child, child_level)
+			if not child.tail or not child.tail.strip():
+				child.tail = child_indentation
+		if not child.tail.strip():
+			child.tail = indentations[level]
+	_indent_children(tree, 0)
 
 def markdown(
 	markdown_text: str,
@@ -259,7 +291,8 @@ def markdown(
 ) -> str:
 	# pre-processing
 	markdown_text = _resolve_internal_links(markdown_text)
-	markdown_text = _remove_syntax_highlighting(markdown_text)
+	if not options.highlight_syntax:
+		markdown_text = _remove_syntax_highlighting(markdown_text)
 	if re.search(r"[^A-Za-z0-9_\-\\\/]", str(id_prefix)) is not None:
 		# prevent shell argument injection
 		raise Exception(f"Invalid id_prefix: {id_prefix}")
@@ -274,11 +307,13 @@ def markdown(
 	).replace('\r\n', '\n')
 
 	# post-processing
-	html = _indent_html(html, level)
+	if options.highlight_syntax:
+		html = _remove_hidden_links(html)
 	html = _fix_code_blocks(html)
-	
+	element = _html_to_dom(html)
+	_indent(element, level)
 
-	return html
+	return _dom_to_html(element)
 
 def markdown_to_dom(*args, **kwargs) -> typing.List[xml.dom.minidom.Element]:
 	html = markdown(*args, **kwargs)
