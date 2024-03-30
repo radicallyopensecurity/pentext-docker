@@ -137,10 +137,10 @@ session.headers["PRIVATE-TOKEN"] = GITLAB_TOKEN
 if COOKIE is not None:
 	session.headers["Cookie"] = COOKIE
 client = gitlab.client.Gitlab(
-  url=GITLAB_SERVER_URL,
-  private_token=GITLAB_TOKEN,
-  session=session,
-  keep_base_url=True
+	url=GITLAB_SERVER_URL,
+	private_token=GITLAB_TOKEN,
+	session=session,
+	keep_base_url=True
 )
 client.auth()
 
