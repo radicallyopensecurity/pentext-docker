@@ -235,7 +235,7 @@ _p_pre_code_close = r"[\s\r\n]*</code>[\s\r\n]*</pre>"
 p_pre_code_open = re.compile(_p_pre_code_open, re.MULTILINE)
 p_pre_code_close = re.compile(_p_pre_code_close, re.MULTILINE)
 p_syntax_highlighting = re.compile(r"^```(.+)$", re.MULTILINE)
-p_hidden_links = re.compile(r"^\s*<a [\>]* aria-hidden=\"true\"\s?/>\s*\n", re.MULTILINE)
+p_hidden_links = re.compile(r'<a href="#gitlab[^>]*" aria-hidden="true"></a>', re.MULTILINE)
 
 def _fix_code_blocks(html: str) -> str:
 	html = re.sub(p_pre_code_open, "<pre><code>", html)
