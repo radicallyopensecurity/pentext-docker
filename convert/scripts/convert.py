@@ -230,10 +230,8 @@ def to_prettyxml(doc):
 	output = re.sub(r"\n*$", "\n", output)
 	return output
 
-_p_pre_code_open = r"<pre>[\s\r\n]*<code>[\s\r\n]*"
-_p_pre_code_close = r"[\s\r\n]*</code>[\s\r\n]*</pre>"
-p_pre_code_open = re.compile(_p_pre_code_open, re.MULTILINE)
-p_pre_code_close = re.compile(_p_pre_code_close, re.MULTILINE)
+p_pre_code_open = re.compile(r"<pre>[\s\r\n]*<code>[\s\r\n]*", re.MULTILINE)
+p_pre_code_close = re.compile(r"[\s\r\n]*</code>[\s\r\n]*</pre>", re.MULTILINE)
 p_syntax_highlighting = re.compile(r"^```(.+)$", re.MULTILINE)
 p_hidden_links = re.compile(r'<a href="#gitlab[^>]*" aria-hidden="true"></a>', re.MULTILINE)
 
