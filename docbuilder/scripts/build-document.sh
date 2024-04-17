@@ -47,6 +47,7 @@ to_pdf()
 {
 	DOC_TYPE="${1:-report}"
 	to_fo "$DOC_TYPE"
+
 	echo "Building ${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}.pdf"
 	/fop/fop \
 		-c /fop/conf/rosfop.xconf \
@@ -56,7 +57,18 @@ to_pdf()
 		-noassembledoc \
 		-noedit \
 		-o "$PDF_PASSWORD" \
-		-u "$PDF_PASSWORD" 
+		-u "$PDF_PASSWORD"&
+
+	echo "Building ${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}_UNPROTECTED.pdf"
+	/fop/fop \
+		-c /fop/conf/rosfop.xconf \
+		"${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}.fo" \
+		"${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}_UNPROTECTED.pdf" \
+		-v \
+		-noassembledoc \
+		-noedit&
+
+	wait
 }
 
 if [ -f "source/report.xml" ]; then
