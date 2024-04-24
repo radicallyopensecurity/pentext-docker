@@ -2,11 +2,6 @@
 
 Generate `pdf|fo|csv` files from `xml` files according to appropriate `xslt`.
 
-## !IMPORTANT - Before use:
-
-Safely download <https://downloads.apache.org/xmlgraphics/fop/KEYS> and verify the keys in it once, outside docker.
-
-
 ## Local Development
 
 ```sh
