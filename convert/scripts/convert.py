@@ -354,7 +354,7 @@ class Upload:
 	def url(self):
 		project_url = urllib.parse.urljoin(
 			client._base_url,
-			self.pentext_project.path_with_namespace
+			f"-/project/{self.pentext_project.id}"
 		)
 		return f"{project_url}{self.path}"
 	
