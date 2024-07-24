@@ -294,7 +294,7 @@ def markdown(
 	if re.search(r"[^A-Za-z0-9_\-\\\/]", str(id_prefix)) is not None:
 		# prevent shell argument injection
 		raise Exception(f"Invalid id_prefix: {id_prefix}")
-	_id_prefix = f"gitlab{id_prefix}"\
+	_id_prefix = f"{id_prefix}_"
 
 	# convert markdown to HTML
 	html = pypandoc.convert_text(
@@ -748,7 +748,7 @@ class Finding(ProjectIssuePentextXMLFile):
 
 		updates = self.updates
 		update_slugs = [
-			f"gitlab/project/{os.environ['CI_PROJECT_ID']}/issues/{update.issue_iid}/note/{update.id}"
+			f"gitlab_project_{os.environ['CI_PROJECT_ID']}_issues_{update.issue_iid}_note_{update.id}"
 			for update in updates
 		]
 
@@ -761,7 +761,7 @@ class Finding(ProjectIssuePentextXMLFile):
 					root.removeChild(other_section)
 
 			for update in self.updates:
-				slug = f"gitlab/project/{os.environ['CI_PROJECT_ID']}/issues/{update.issue_iid}/note/{update.id}"
+				slug = f"gitlab_project_{os.environ['CI_PROJECT_ID']}_issues_{update.issue_iid}_note_{update.id}"
 
 				# convert local date
 				utc_date = datetime.datetime.strptime(update.created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
@@ -876,7 +876,11 @@ class Finding(ProjectIssuePentextXMLFile):
 			# description is native value str
 			markdown_text = _value if isinstance(_value, str) else _value.markdown
 		try:
-			section_nodes = markdown_to_dom(markdown_text, self.iid, level=level)
+			section_nodes = markdown_to_dom(
+				markdown_text,
+				slug if slug is not None else self.iid,
+				level=level
+			)
 		except HTMLParsingError as err:
 			log_pentext_error(
 				f"finding {self.iid} section '{name}' has an HTML markup error after converting from Markdown", (
@@ -1077,13 +1081,13 @@ class SectionPart(gitlab.v4.objects.issues.ProjectIssue):
 		super().__init__(*args, **kwargs)
 
 	@property
-	def path(self):
-		return f"{self.manager.path}/{self.encoded_id}/"
+	def identifier_slug(self):
+		return f"{self.manager.path}_{self.encoded_id}"
 
 	def _getDOM(self, wrapper_element, title_element, indent_level):
 		doc = xml.dom.minidom.Document()
 		root = doc.createElement(wrapper_element or "root")
-		root.setAttribute("id", self.path)
+		root.setAttribute("id", self.identifier_slug)
 
 		if title_element is not None:
 			title = doc.createElement(title_element)
@@ -1094,7 +1098,7 @@ class SectionPart(gitlab.v4.objects.issues.ProjectIssue):
 			root.appendChild(title)
 			#root.appendChild(doc.createTextNode("\n"))
 
-		dom = markdown_to_dom(self.description, self.path, level=indent_level)
+		dom = markdown_to_dom(self.description, self.identifier_slug, level=indent_level)
 		while(len(dom) > 0):
 			root.appendChild(dom[0])
 		return root
