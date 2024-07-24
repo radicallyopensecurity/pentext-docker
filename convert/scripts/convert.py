@@ -369,7 +369,11 @@ class Upload:
 		dirname = os.path.dirname(self.local_path)
 		os.makedirs(dirname, exist_ok=True)
 		logging.info(f"downloading {self.url} to {self.local_path}")
-		urllib.request.urlretrieve(self.url, self.local_path)
+		try:
+			urllib.request.urlretrieve(self.url, self.local_path)
+		except Exception as err:
+			print("download failed")
+			raise err
 
 
 class PentextXMLFile:
