@@ -4,7 +4,7 @@ ARG DEBIAN_FRONTEND="noninteractive"
 RUN apt-get update
 RUN apt-get install -y python3 python3-pip python3-tz pandoc
 
-RUN python3 -m pip install pypandoc python-gitlab python-slugify --break-system-packages
+RUN python3 -m pip install pypandoc python-gitlab python-slugify
 
 # ADD scripts/gitlab_to_pentext.py /scripts/gitlab_to_pentext.py
 # ADD scripts/gl2pentext_postprocess.py /scripts/gl2pentext_postprocess.py
