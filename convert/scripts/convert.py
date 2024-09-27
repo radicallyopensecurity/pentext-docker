@@ -1304,8 +1304,6 @@ class Report(PentextXMLFile):
 		if len(labels) > 0:
 			labels_element.appendChild(self.doc.createTextNode("\n" + (_indent_character * (indent_level-1))))
 			for label in labels:
-				if not label.is_project_label:
-					continue
 				label_element = self.doc.createElement("label")
 				label_element.setAttribute("name", label.name)
 				label_element.setAttribute("color", label.color)
