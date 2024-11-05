@@ -16,7 +16,7 @@
 # ignore changes in the .git folder
 # ignore temporary vim files
 # TODO ignore more files, e.g. git-related?
-REGEX_EXCLUDE_PATHS='(#$|~$|/\.git/|.swp$|.swx$)'
+REGEX_EXCLUDE_PATHS='(#$|~$|/\.git/|.swp$|.swx$|/target/)'
 
 # When extending this script, take care to avoid command injection or functional
 # issues when operating on unusual paths.
