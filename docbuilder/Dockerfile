@@ -1,8 +1,8 @@
-ARG FOP_VERSION=2.9
+ARG FOP_VERSION=2.10
 ARG SAXON_VERSION=11.6
 
 # build container, used for downloading and checking non-packaged software
-FROM eclipse-temurin:22-alpine as download-and-extract-tools
+FROM eclipse-temurin:23-alpine as download-and-extract-tools
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
@@ -57,7 +57,7 @@ RUN tar -xf fop-bin.tar.gz
 RUN unzip SaxonHE-J.zip
 
 # main container
-FROM eclipse-temurin:22-alpine
+FROM eclipse-temurin:23-alpine
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
