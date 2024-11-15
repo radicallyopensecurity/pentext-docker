@@ -331,7 +331,7 @@ def _is_pentext_label(label) -> bool:
 class Upload:
 
 	upload_path_pattern = re.compile(
-		"(?:\.{2})?/uploads/(?P<hex>[A-Fa-f0-9]{32})/(?P<filename>[^\.][^/]+)"
+		"(?:\\.{2})?/uploads/(?P<hex>[A-Fa-f0-9]{32})/(?P<filename>[^\\.][^/]+)"
 	)
 
 	def __init__(self, path, pentext_project=None) -> None:
