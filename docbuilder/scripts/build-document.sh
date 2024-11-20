@@ -7,51 +7,56 @@ if [ "$CI_PROJECT_NAME" != "" ]; then
 	FILENAME_SUFFIX="_$(echo ${CI_PROJECT_NAME} | sed s/^off-// | sed s/^pen-//)"
 fi
 
+SOURCE_DOCUMENTS=${SOURCE_DOCUMENTS-offerte document}
+SOURCE_REPORTS=${SOURCE_REPORTS-report}
+
 set -x
 mkdir -p "$TARGET_DIR"
 
 to_csv()
 {
-	DOC_TYPE="${1:-report}"
-	echo "Building ${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}.csv"
+	SOURCE_FILE="$1"
+	echo "Building ${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.csv"
 	java -jar /saxon.jar \
-		"-s:source/${DOC_TYPE}.xml" \
+		"-s:source/${SOURCE_FILE}.xml" \
 		"-xsl:xslt/findings2csv.xsl" \
-		"-o:${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}.csv" \
+		"-o:${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.csv" \
 		-xi
 }
 
 to_html()
 {
-	DOC_TYPE="${1:-report}"
-	echo "Building ${TARGET_DIR}/${DOC_TYPE}_${PROJECT_NAME}.html"
+	SOURCE_FILE="$1"
+	echo "Building ${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.html"
 	java -jar /saxon.jar \
-		"-s:source/${DOC_TYPE}.xml" \
+		"-s:source/${SOURCE_FILE}.xml" \
 		"-xsl:xslt/generate_html_report.xsl" \
-		"-o:${TARGET_DIR}/${DOC_TYPE}_${PROJECT_NAME}.html" \
+		"-o:${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.html" \
 		-xi
 }
 
 to_fo()
 {
-	DOC_TYPE="${1:-report}"
-	echo "Building ${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}.fo"
+	DOC_TYPE="$1"
+	SOURCE_FILE="$2"
+	echo "Building ${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.fo"
 	java -jar /saxon.jar \
-		"-s:source/${DOC_TYPE}.xml" \
+		"-s:source/${SOURCE_FILE}.xml" \
 		"-xsl:xslt/generate_${DOC_TYPE}.xsl" \
-		"-o:${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}.fo" \
+		"-o:${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.fo" \
 		-xi
 }
 
 to_pdf()
 {
-	DOC_TYPE="${1:-report}"
-	to_fo "$DOC_TYPE"
-	echo "Building ${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}.pdf"
+	DOC_TYPE="$1"
+	SOURCE_FILE="$2"
+	to_fo "${DOC_TYPE}" "${SOURCE_FILE}"
+	echo "Building ${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.pdf"
 	/fop/fop \
 		-c /fop/conf/rosfop.xconf \
-		"${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}.fo" \
-		"${TARGET_DIR}/${DOC_TYPE}${FILENAME_SUFFIX}.pdf" \
+		"${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.fo" \
+		"${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.pdf" \
 		-v \
 		-noassembledoc \
 		-noedit \
@@ -59,16 +64,27 @@ to_pdf()
 		-u "$PDF_PASSWORD" 
 }
 
-if [ -f "source/report.xml" ]; then
-	to_pdf report
-	to_csv report
-	to_html report
-fi
-if [ -f "source/offerte.xml" ]; then
-	to_pdf offerte
-fi
-if [ -f "source/document.xml" ]; then
-	to_pdf document
-fi
+for SOURCE_FILE in ${SOURCE_DOCUMENTS}
+do
+	if [ "$SOURCE_FILE" == "offerte" ]; then
+		DOC_TYPE="offerte"
+	else
+		DOC_TYPE="document"
+	fi
+	if [ -f "source/${SOURCE_FILE}.xml" ]; then
+		to_pdf "$DOC_TYPE" "$SOURCE_FILE"
+	fi
+done
+
+for SOURCE_FILE in ${SOURCE_REPORTS}
+do
+	if [ -f "source/${SOURCE_FILE}.xml" ]; then
+		to_pdf report "$SOURCE_FILE"
+		to_csv "$SOURCE_FILE"
+		to_html "$SOURCE_FILE"
+	fi
+done
+
+exit 0
 
 ls -al $TARGET_DIR
