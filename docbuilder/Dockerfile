@@ -19,7 +19,7 @@ RUN tar -xf fop-${FOP_VERSION}-bin.tar.gz
 # use strict to force error exit code when jar is unsigned
 RUN jarsigner -verify -strict Saxon-HE-${SAXON_VERSION}.jar
 
-FROM eclipse-temurin:20
+FROM eclipse-temurin:21
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
