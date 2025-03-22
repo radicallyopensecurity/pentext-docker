@@ -51,8 +51,6 @@ services:
       context: ./proxy
     expose:
       - 80
-    ports:
-      - "127.0.0.1:80:80"
     environment:
       CI_SERVER_URL: "${CI_SERVER_URL}"
       EXTRA_COOKIES: "${EXTRA_COOKIES}"
