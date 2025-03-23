@@ -486,6 +486,21 @@ class ProjectIssuePentextXMLFile(
 	def relative_path(self):
 		return os.path.join(self.source_dir, self.filename)
 
+	@staticmethod
+	def get_dom_section(*args, **kwargs) -> xml.dom.minidom.Element:
+		try:
+			return next(Finding.get_dom_sections(*args, **kwargs))
+		except StopIteration:
+			return None
+
+	@staticmethod
+	def get_dom_sections(root, tagName, slug=None) -> xml.dom.minidom.Element:
+		for node in root.childNodes:
+			if node.nodeType == node.ELEMENT_NODE and node.tagName == tagName:
+				if (slug is not None) and (node.getAttribute("id") != slug):
+					continue
+				yield node
+
 
 class FindingIssueNote(gitlab.v4.objects.notes.ProjectIssueNote):
 	"""
@@ -530,6 +545,25 @@ class TodoNote:
 
 	def __str__(self):
 		return self.markdown
+
+
+def refresh_labels(doc, root, labels_element, extra_labels, level):
+	if labels_element is None:
+		labels_element = doc.createElement("labels")
+		root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
+		root.appendChild(labels_element)
+		root.appendChild(doc.createTextNode("\n"))
+	while labels_element.hasChildNodes():
+		labels_element.removeChild(labels_element.firstChild)
+	for label_title in extra_labels:
+		label = doc.createElement("label")
+		label.appendChild(doc.createTextNode(label_title))
+		labels_element.appendChild(
+			doc.createTextNode(f"\n{INDENT_CHARACTER * (level + 1)}")
+		)
+		labels_element.appendChild(label)
+	if len(extra_labels):
+		labels_element.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
 
 
 class Finding(ProjectIssuePentextXMLFile):
@@ -618,21 +652,6 @@ class Finding(ProjectIssuePentextXMLFile):
 		for note in self.pentext_notes:
 			if note.keyword == note_type:
 				yield note
-
-	@staticmethod
-	def get_dom_section(*args, **kwargs) -> xml.dom.minidom.Element:
-		try:
-			return next(Finding.get_dom_sections(*args, **kwargs))
-		except StopIteration:
-			return None
-
-	@staticmethod
-	def get_dom_sections(root, tagName, slug=None) -> xml.dom.minidom.Element:
-		for node in root.childNodes:
-			if node.nodeType == node.ELEMENT_NODE and node.tagName == tagName:
-				if (slug is not None) and (node.getAttribute("id") != slug):
-					continue
-				yield node
 
 	@property
 	def doc(self):
@@ -781,22 +800,13 @@ class Finding(ProjectIssuePentextXMLFile):
 
 		labels = self.get_dom_section(root, "labels")
 		if options.include_labels and (not exists or (FindingMergeStrategy.LABELS in self.strategy)):
-			if labels is None:
-				labels = doc.createElement("labels")
-				root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
-				root.appendChild(labels)
-				root.appendChild(doc.createTextNode("\n"))
-			while labels.hasChildNodes():
-				labels.removeChild(labels.firstChild)
-			for label_title in self.extra_labels:
-				label = doc.createElement("label")
-				label.appendChild(doc.createTextNode(label_title))
-				labels.appendChild(
-					doc.createTextNode(f"\n{INDENT_CHARACTER * (level + 1)}")
-				)
-				labels.appendChild(label)
-			if len(self.extra_labels):
-				labels.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
+			refresh_labels(
+				doc=doc,
+				root=root,
+				labels_element=labels,
+				extra_labels=self.extra_labels,
+				level=level
+			)
 
 		testsuite = pentext_unit.get_or_add_testsuite(testsuite_name)
 		for [k, v] in status.items():
@@ -924,12 +934,24 @@ class NonFinding(ProjectIssuePentextXMLFile):
 		root.setAttribute("number", str(self.iid))
 		root.appendChild(doc.createTextNode("\n"))
 
+		level = 1
+
 		title = doc.createElement("title");
 		title.appendChild(doc.createTextNode(self.title))
 		root.appendChild(title)
 		root.appendChild(doc.createTextNode("\n"))
 
-		content_nodes = markdown_to_dom(self.description, self.iid, level=1)
+		labels = self.get_dom_section(root, "labels")
+		if options.include_labels and (FindingMergeStrategy.LABELS in options.merge_strategy):
+			refresh_labels(
+				doc=doc,
+				root=root,
+				labels_element=labels,
+				extra_labels=self.extra_labels,
+				level=level
+			)
+
+		content_nodes = markdown_to_dom(self.description, self.iid, level=level)
 		while len(content_nodes):
 			node = content_nodes[0]
 			root.appendChild(node)
