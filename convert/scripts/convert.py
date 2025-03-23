@@ -289,6 +289,7 @@ def markdown(
 ) -> str:
 	# pre-processing
 	markdown_text = _resolve_internal_links(markdown_text)
+	markdown_text = _remove_gitlab_image_dimensions(markdown_text)
 	if not options.highlight_syntax:
 		markdown_text = _remove_syntax_highlighting(markdown_text)
 	if re.search(r"[^A-Za-z0-9_\-\\\/]", str(id_prefix)) is not None:
@@ -1463,6 +1464,13 @@ def _resolve_internal_links(markdown_text: str) -> str:
 	return re.sub(
 		r'#(\d+)',
 		resolve_link,
+		markdown_text
+	)
+
+def _remove_gitlab_image_dimensions(markdown_text: str) -> str:
+	return re.sub(
+		r'(\[.*\]\(.*\))\{((width|height)=\d*\s?)+\}',
+		r'\1',
 		markdown_text
 	)
 
