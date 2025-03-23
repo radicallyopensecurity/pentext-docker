@@ -1448,8 +1448,9 @@ class PentextProject(gitlab.v4.objects.projects.Project):
 			self.report.add_finding(finding)
 
 		non_findings = self.non_findings
-		if non_findings is not None:
+		if non_findings is None:
 			logging.warning("Non-findings section does not exist in report.xml")
+		else:
 			for non_finding in self.non_findings:
 				if not non_finding.exists or (SKIP_EXISTING is False):
 					non_finding.write();
