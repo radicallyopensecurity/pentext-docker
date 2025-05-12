@@ -66,7 +66,7 @@ to_pdf()
 
 for SOURCE_FILE in ${SOURCE_DOCUMENTS}
 do
-	if [ "$SOURCE_FILE" == "offerte" ]; then
+	if [ "$SOURCE_FILE" = "offerte" ]; then
 		DOC_TYPE="offerte"
 	else
 		DOC_TYPE="document"
