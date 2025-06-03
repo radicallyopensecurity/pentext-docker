@@ -1,7 +1,9 @@
-ARG FOP_VERSION=2.7
-ARG SAXON_VERSION=10.5
+ARG FOP_VERSION=2.11
+# there are newer 11.x and 12.x Saxon versions available
+ARG SAXON_VERSION=10.9
 
-FROM eclipse-temurin:20 AS download-and-extract-tools
+# eclipse-temurin:21 tracks JDK 21, which is LTS
+FROM eclipse-temurin:21 AS download-and-extract-tools
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
