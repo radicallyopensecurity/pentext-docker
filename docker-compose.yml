@@ -14,6 +14,7 @@ services:
     networks:
       - default
       - proxy
+
   docbuilder:
     build:
       context: ./docbuilder
@@ -24,28 +25,31 @@ services:
       CI_PROJECT_DIR: /pentext
     network_mode: none
     working_dir: /pentext
+
   off2rep:
     build:
       context: ./off2rep
     profiles:
       - manual
     environment:
-      # CI_PROJECT_DIR: 
+      # CI_PROJECT_DIR:
       PROJECT_ACCESS_TOKEN: ${GITLAB_TOKEN}
       CI_DEFAULT_BRANCH: main
       GIT_USER_NAME: ${GITLAB_USER_NAME:-$GIT_USER_NAME}
       GIT_USER_EMAIL: ${GITLAB_USER_EMAIL:-$GIT_USER_EMAIL}
     networks:
       - proxy
+
   quickscope:
     build:
       context: ./quickscope
     profiles:
       - manual
     environment:
-      # CI_PROJECT_PATH: 
+      # CI_PROJECT_PATH:
       CI_DEFAULT_BRANCH: main
       CI_SERVER_HOST: "git.radicallyopensecurity.com"
+
   proxy:
     build:
       context: ./proxy
@@ -57,6 +61,7 @@ services:
     networks:
       - default
       - proxy
+
 networks:
   proxy:
     driver: bridge
