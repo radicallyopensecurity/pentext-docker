@@ -1,6 +1,6 @@
 # pentext-docker
 
-Scripts and GitLab runners for document generation. 
+Scripts and GitLab runners for document generation.
 
 ## Usage
 
@@ -55,6 +55,7 @@ Convert quickscope into a quotation.
 🚨⚠️ **Security warning**: `GITLAB_TOKEN` will be accessible from the [convert](./convert/) container and your private EyeDP Cookie is not supposed to be shared or stored on disk. The [proxy](./proxy/) setup is a hack to separate the convert container from the Internet and local network and from the secret EyeDP Cookie, but must be used with caution. The credential will be built into the image and stored on disk. Only use on a host you fully trust and nobody else has access to.
 
 ### Configure and run EyeDP Proxy
+
 ```sh
 cp .env.sample .env
 # optionally set a fixed GITLAB_TOKEN (read_api, read_repo)
@@ -86,4 +87,4 @@ docker compose run --rm \
 
 ## License
 
-[LICENSE.txt](/LICENSE.txt)
+[GPL-2.0](/LICENSE)
