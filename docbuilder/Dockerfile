@@ -1,7 +1,7 @@
 ARG FOP_VERSION=2.7
 ARG SAXON_VERSION=10.5
 
-FROM eclipse-temurin:20 AS download-and-extract-tools
+FROM eclipse-temurin:21 AS download-and-extract-tools
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
