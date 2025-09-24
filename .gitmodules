@@ -1,0 +1,3 @@
+[submodule "lib/pentext"]
+	path = lib/pentext
+	url = https://github.com/radicallyopensecurity/pentext.git
