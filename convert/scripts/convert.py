@@ -289,12 +289,13 @@ def markdown(
 ) -> str:
 	# pre-processing
 	markdown_text = _resolve_internal_links(markdown_text)
+	markdown_text = _remove_gitlab_image_dimensions(markdown_text)
 	if not options.highlight_syntax:
 		markdown_text = _remove_syntax_highlighting(markdown_text)
 	if re.search(r"[^A-Za-z0-9_\-\\\/]", str(id_prefix)) is not None:
 		# prevent shell argument injection
 		raise Exception(f"Invalid id_prefix: {id_prefix}")
-	_id_prefix = f"gitlab{id_prefix}"\
+	_id_prefix = f"{id_prefix}_"
 
 	# convert markdown to HTML
 	html = pypandoc.convert_text(
@@ -331,7 +332,7 @@ def _is_pentext_label(label) -> bool:
 class Upload:
 
 	upload_path_pattern = re.compile(
-		"(?:\.{2})?/uploads/(?P<hex>[A-Fa-f0-9]{32})/(?P<filename>[^\.][^/]+)"
+		"(?:\\.{2})?/uploads/(?P<hex>[A-Fa-f0-9]{32})/(?P<filename>[^\\.][^/]+)"
 	)
 
 	def __init__(self, path, pentext_project=None) -> None:
@@ -485,6 +486,21 @@ class ProjectIssuePentextXMLFile(
 	def relative_path(self):
 		return os.path.join(self.source_dir, self.filename)
 
+	@staticmethod
+	def get_dom_section(*args, **kwargs) -> xml.dom.minidom.Element:
+		try:
+			return next(Finding.get_dom_sections(*args, **kwargs))
+		except StopIteration:
+			return None
+
+	@staticmethod
+	def get_dom_sections(root, tagName, slug=None) -> xml.dom.minidom.Element:
+		for node in root.childNodes:
+			if node.nodeType == node.ELEMENT_NODE and node.tagName == tagName:
+				if (slug is not None) and (node.getAttribute("id") != slug):
+					continue
+				yield node
+
 
 class FindingIssueNote(gitlab.v4.objects.notes.ProjectIssueNote):
 	"""
@@ -529,6 +545,25 @@ class TodoNote:
 
 	def __str__(self):
 		return self.markdown
+
+
+def refresh_labels(doc, root, labels_element, extra_labels, level):
+	if labels_element is None:
+		labels_element = doc.createElement("labels")
+		root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
+		root.appendChild(labels_element)
+		root.appendChild(doc.createTextNode("\n"))
+	while labels_element.hasChildNodes():
+		labels_element.removeChild(labels_element.firstChild)
+	for label_title in extra_labels:
+		label = doc.createElement("label")
+		label.appendChild(doc.createTextNode(label_title))
+		labels_element.appendChild(
+			doc.createTextNode(f"\n{INDENT_CHARACTER * (level + 1)}")
+		)
+		labels_element.appendChild(label)
+	if len(extra_labels):
+		labels_element.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
 
 
 class Finding(ProjectIssuePentextXMLFile):
@@ -617,21 +652,6 @@ class Finding(ProjectIssuePentextXMLFile):
 		for note in self.pentext_notes:
 			if note.keyword == note_type:
 				yield note
-
-	@staticmethod
-	def get_dom_section(*args, **kwargs) -> xml.dom.minidom.Element:
-		try:
-			return next(Finding.get_dom_sections(*args, **kwargs))
-		except StopIteration:
-			return None
-
-	@staticmethod
-	def get_dom_sections(root, tagName, slug=None) -> xml.dom.minidom.Element:
-		for node in root.childNodes:
-			if node.nodeType == node.ELEMENT_NODE and node.tagName == tagName:
-				if (slug is not None) and (node.getAttribute("id") != slug):
-					continue
-				yield node
 
 	@property
 	def doc(self):
@@ -748,7 +768,7 @@ class Finding(ProjectIssuePentextXMLFile):
 
 		updates = self.updates
 		update_slugs = [
-			f"gitlab/project/{os.environ['CI_PROJECT_ID']}/issues/{update.issue_iid}/note/{update.id}"
+			f"gitlab_project_{os.environ['CI_PROJECT_ID']}_issues_{update.issue_iid}_note_{update.id}"
 			for update in updates
 		]
 
@@ -761,7 +781,7 @@ class Finding(ProjectIssuePentextXMLFile):
 					root.removeChild(other_section)
 
 			for update in self.updates:
-				slug = f"gitlab/project/{os.environ['CI_PROJECT_ID']}/issues/{update.issue_iid}/note/{update.id}"
+				slug = f"gitlab_project_{os.environ['CI_PROJECT_ID']}_issues_{update.issue_iid}_note_{update.id}"
 
 				# convert local date
 				utc_date = datetime.datetime.strptime(update.created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
@@ -780,22 +800,13 @@ class Finding(ProjectIssuePentextXMLFile):
 
 		labels = self.get_dom_section(root, "labels")
 		if options.include_labels and (not exists or (FindingMergeStrategy.LABELS in self.strategy)):
-			if labels is None:
-				labels = doc.createElement("labels")
-				root.appendChild(doc.createTextNode(INDENT_CHARACTER * level))
-				root.appendChild(labels)
-				root.appendChild(doc.createTextNode("\n"))
-			while labels.hasChildNodes():
-				labels.removeChild(labels.firstChild)
-			for label_title in self.extra_labels:
-				label = doc.createElement("label")
-				label.appendChild(doc.createTextNode(label_title))
-				labels.appendChild(
-					doc.createTextNode(f"\n{INDENT_CHARACTER * (level + 1)}")
-				)
-				labels.appendChild(label)
-			if len(self.extra_labels):
-				labels.appendChild(doc.createTextNode("\n" + (INDENT_CHARACTER * level)))
+			refresh_labels(
+				doc=doc,
+				root=root,
+				labels_element=labels,
+				extra_labels=self.extra_labels,
+				level=level
+			)
 
 		testsuite = pentext_unit.get_or_add_testsuite(testsuite_name)
 		for [k, v] in status.items():
@@ -876,7 +887,11 @@ class Finding(ProjectIssuePentextXMLFile):
 			# description is native value str
 			markdown_text = _value if isinstance(_value, str) else _value.markdown
 		try:
-			section_nodes = markdown_to_dom(markdown_text, self.iid, level=level)
+			section_nodes = markdown_to_dom(
+				markdown_text,
+				slug if slug is not None else self.iid,
+				level=level
+			)
 		except HTMLParsingError as err:
 			log_pentext_error(
 				f"finding {self.iid} section '{name}' has an HTML markup error after converting from Markdown", (
@@ -919,12 +934,24 @@ class NonFinding(ProjectIssuePentextXMLFile):
 		root.setAttribute("number", str(self.iid))
 		root.appendChild(doc.createTextNode("\n"))
 
+		level = 1
+
 		title = doc.createElement("title");
 		title.appendChild(doc.createTextNode(self.title))
 		root.appendChild(title)
 		root.appendChild(doc.createTextNode("\n"))
 
-		content_nodes = markdown_to_dom(self.description, self.iid, level=1)
+		labels = self.get_dom_section(root, "labels")
+		if options.include_labels and (FindingMergeStrategy.LABELS in options.merge_strategy):
+			refresh_labels(
+				doc=doc,
+				root=root,
+				labels_element=labels,
+				extra_labels=self.extra_labels,
+				level=level
+			)
+
+		content_nodes = markdown_to_dom(self.description, self.iid, level=level)
 		while len(content_nodes):
 			node = content_nodes[0]
 			root.appendChild(node)
@@ -1077,13 +1104,13 @@ class SectionPart(gitlab.v4.objects.issues.ProjectIssue):
 		super().__init__(*args, **kwargs)
 
 	@property
-	def path(self):
-		return f"{self.manager.path}/{self.encoded_id}/"
+	def identifier_slug(self):
+		return f"{self.manager.path}_{self.encoded_id}"
 
 	def _getDOM(self, wrapper_element, title_element, indent_level):
 		doc = xml.dom.minidom.Document()
 		root = doc.createElement(wrapper_element or "root")
-		root.setAttribute("id", self.path)
+		root.setAttribute("id", self.identifier_slug)
 
 		if title_element is not None:
 			title = doc.createElement(title_element)
@@ -1094,7 +1121,7 @@ class SectionPart(gitlab.v4.objects.issues.ProjectIssue):
 			root.appendChild(title)
 			#root.appendChild(doc.createTextNode("\n"))
 
-		dom = markdown_to_dom(self.description, self.path, level=indent_level)
+		dom = markdown_to_dom(self.description, self.identifier_slug, level=indent_level)
 		while(len(dom) > 0):
 			root.appendChild(dom[0])
 		return root
@@ -1300,8 +1327,6 @@ class Report(PentextXMLFile):
 		if len(labels) > 0:
 			labels_element.appendChild(self.doc.createTextNode("\n" + (_indent_character * (indent_level-1))))
 			for label in labels:
-				if not label.is_project_label:
-					continue
 				label_element = self.doc.createElement("label")
 				label_element.setAttribute("name", label.name)
 				label_element.setAttribute("color", label.color)
@@ -1424,8 +1449,9 @@ class PentextProject(gitlab.v4.objects.projects.Project):
 			self.report.add_finding(finding)
 
 		non_findings = self.non_findings
-		if non_findings is not None:
+		if non_findings is None:
 			logging.warning("Non-findings section does not exist in report.xml")
+		else:
 			for non_finding in self.non_findings:
 				if not non_finding.exists or (SKIP_EXISTING is False):
 					non_finding.write();
@@ -1461,6 +1487,13 @@ def _resolve_internal_links(markdown_text: str) -> str:
 	return re.sub(
 		r'#(\d+)',
 		resolve_link,
+		markdown_text
+	)
+
+def _remove_gitlab_image_dimensions(markdown_text: str) -> str:
+	return re.sub(
+		r'(\[.*\]\(.*\))\{((width|height)=\d*\s?)+\}',
+		r'\1',
 		markdown_text
 	)
 
