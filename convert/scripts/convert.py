@@ -137,7 +137,7 @@ options = parser.parse_args()
 # including protocol and port (for example https://gitlab.example.org:8080)
 GITLAB_SERVER_URL = os.environ.get(
 	"CI_SERVER_URL",
-	"https://git.radicallyopensecurtity.com"
+	"https://git.radicallyopensecurity.com"
 )
 
 PENTEXT_CONVERT_COMMENT = "pentext-docker: convert"
