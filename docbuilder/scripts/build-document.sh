@@ -9,6 +9,7 @@ fi
 
 SOURCE_DOCUMENTS=${SOURCE_DOCUMENTS-offerte document}
 SOURCE_REPORTS=${SOURCE_REPORTS-report}
+FOP_CONFIG_FILE=${FOP_CONFIG_FILE:-/fop/conf/rosfop.xconf}
 
 set -x
 mkdir -p "$TARGET_DIR"
@@ -54,7 +55,7 @@ to_pdf()
 	to_fo "${DOC_TYPE}" "${SOURCE_FILE}"
 	echo "Building ${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.pdf"
 	/fop/fop \
-		-c /fop/conf/rosfop.xconf \
+		-c "${FOP_CONFIG_FILE}" \
 		"${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.fo" \
 		"${TARGET_DIR}/${SOURCE_FILE}${FILENAME_SUFFIX}.pdf" \
 		-v \
