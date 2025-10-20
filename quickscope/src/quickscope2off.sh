@@ -1,4 +1,5 @@
-#!/bin/sh
+#!/usr/bin/env ash
+
 set -e
 cd "$CI_PROJECT_DIR"
 
@@ -11,6 +12,6 @@ git commit -m "convert pentext quickscope to offerte"
 git remote -v
 
 git remote rm origin
-git remote add origin "https://CI:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}"
+git remote add origin "${SERVER_PROTOCOL:-https}://CI:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}"
 
-git push origin HEAD:${CI_DEFAULT_BRANCH}
+git push origin HEAD:refs/heads/${CI_DEFAULT_BRANCH}
