@@ -1,8 +1,9 @@
 ARG FOP_VERSION=2.11
-ARG SAXON_VERSION=11.6
+ARG SAXON_VERSION=11.7
 
 # build container, used for downloading and checking non-packaged software
-FROM eclipse-temurin:21-alpine as download-and-extract-tools
+# take care to use a Java LTS version with security updates
+FROM eclipse-temurin:25-jre-alpine as download-and-extract-tools
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
@@ -37,7 +38,7 @@ RUN wget https://archive.apache.org/dist/xmlgraphics/fop/binaries/fop-${FOP_VERS
 
 # sha512sum of Saxon ZIP archive of version SAXON_VERSION
 # reminder: update this line when switching to a new Saxon version
-RUN echo "2370a0aebc85007106f030a7aa95eee8a909542d9a80da56a0cf43fa4ff405f5a7f7804edf3755ca82e718a13032fbe9935f928257327dc2f4725b0c21dba692 SaxonHE-J.zip" > SHA512SUM.txt
+RUN echo "e82fbc32c66af60f31eb99b03206397d5bc15d85fa64f2308ee406ebde85d255a96cf8b18a0321149f85b180c405fb67c93ac9e8156c98bde078a054e9f5e251 SaxonHE-J.zip" > SHA512SUM.txt
 
 # the download URL needs the version number with a dash instead of dot separator
 # generate this string dynamically and avoid the need for a separate ARG variable
@@ -57,7 +58,8 @@ RUN tar -xf fop-bin.tar.gz
 RUN unzip SaxonHE-J.zip
 
 # main container
-FROM eclipse-temurin:21-alpine
+# see previous suggestions for container versions and maintenance
+FROM eclipse-temurin:25-jre-alpine
 ARG FOP_VERSION
 ARG SAXON_VERSION
 
