@@ -25,9 +25,6 @@ import pypandoc
 from slugify import slugify
 
 import gitlab.client
-import gitlab.base
-import gitlab.v4.objects.issues
-import gitlab.v4.objects.notes
 
 from junit import PentextUnit
 pentext_unit = PentextUnit()
@@ -217,11 +214,6 @@ class HTMLParsingError(Exception):
 		return "\n".join(lines[error_line-self.LINE_RADIUS:error_line+self.LINE_RADIUS+1])
 
 
-def curry_project_obj_cls(obj_cls, pentext_project):
-	def _obj_cls(*args, **kwargs):
-		return obj_cls(*args, **kwargs, pentext_project=pentext_project)
-	return _obj_cls
-
 def to_prettyxml(doc):
 	output = doc.toxml(encoding="UTF-8").decode("UTF-8")
 	# force newline after XML declaration
@@ -354,7 +346,7 @@ class Upload:
 	@property
 	def url(self):
 		project_url = urllib.parse.urljoin(
-			client._base_url,
+			client.url,
 			f"-/project/{self.pentext_project.id}"
 		)
 		return f"{project_url}{self.path}"
@@ -445,34 +437,26 @@ class PentextXMLFile:
 		raise NotImplementedError()
 
 
-class ProjectIssuePentextSection(gitlab.v4.objects.issues.ProjectIssue):
+class ProjectIssuePentextXMLFile(PentextXMLFile):
 	"""
-	Pentext section GitLab.
+	GitLab Issue associated with a Pentext XML file.
+
+	Pentext Findings or Non-Finding XML files (findings/f1-finding-title-slug.xml)
+	are related to a GitLab Issue.
 	"""
-	__module__ = "gitlab.v4.objects.issues"
+
+	def __init__(self, issue, pentext_project=None) -> None:
+		self._issue = issue
+		PentextXMLFile.__init__(self, pentext_project=pentext_project)
+		self.existing_doc = None
+
+	def __getattr__(self, name):
+		return getattr(self._issue, name)
 
 	@property
 	def extra_labels(self) -> typing.List[str]:
 		"""Return GitLab Issue labels that are not associated with Pentext."""
-		return [label for label in self.labels if not _is_pentext_label(label)]
-
-
-class ProjectIssuePentextXMLFile(
-	PentextXMLFile,
-	ProjectIssuePentextSection
-):
-	"""
-	GitLab Issue associated with a Pentext XML file.
-
-	Pentext Findings or Non-Findig XML files (findings/f1-finding-title-slug.xml)
-	are related to a GitLab Issue.
-	"""
-	__module__ = "gitlab.v4.objects.issues"
-
-	def __init__(self, *args, pentext_project, **kwargs) -> None:
-		gitlab.v4.objects.issues.ProjectIssue.__init__(self, *args, **kwargs)
-		PentextXMLFile.__init__(self, pentext_project=pentext_project)
-		self.existing_doc = None
+		return [label for label in self._issue.labels if not _is_pentext_label(label)]
 
 	@property
 	def slug(self):
@@ -502,11 +486,10 @@ class ProjectIssuePentextXMLFile(
 				yield node
 
 
-class FindingIssueNote(gitlab.v4.objects.notes.ProjectIssueNote):
+class FindingIssueNote:
 	"""
 	GitLab Issue Discussion starting with a prefix keyword.
 	"""
-	__module__ = "gitlab.v4.objects.notes"
 
 	NOTE_KEYWORDS = [
 		"recommendation",
@@ -516,9 +499,9 @@ class FindingIssueNote(gitlab.v4.objects.notes.ProjectIssueNote):
 		"technicaldescription"
 	]
 
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		lines = self.body.splitlines()
+	def __init__(self, note):
+		self._note = note
+		lines = note.body.splitlines()
 		first_line = lines.pop(0)
 		keyword = first_line.lower().replace(" ", "").strip().strip("#:")
 		if keyword in self.NOTE_KEYWORDS:
@@ -528,8 +511,11 @@ class FindingIssueNote(gitlab.v4.objects.notes.ProjectIssueNote):
 			self.markdown = "\n".join(lines).strip()
 			self.keyword = keyword
 		else:
-			self.markdown = self.body.strip()
+			self.markdown = note.body.strip()
 			self.keyword = None
+
+	def __getattr__(self, name):
+		return getattr(self._note, name)
 
 	def __str__(self):
 		return self.markdown
@@ -570,10 +556,9 @@ class Finding(ProjectIssuePentextXMLFile):
 	"""
 	Pentext finding XML structure associated with a GitLab Issue.
 	"""
-	__module__ = "gitlab.v4.objects.issues"
 
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
+	def __init__(self, issue, pentext_project=None):
+		super().__init__(issue, pentext_project=pentext_project)
 		self._pentext_notes = None
 		self.strategy = options.merge_strategy
 
@@ -581,23 +566,21 @@ class Finding(ProjectIssuePentextXMLFile):
 	def pentext_notes(self):
 		if self._pentext_notes is None:
 			self._pentext_notes = []
-			_obj_cls = self.notes._obj_cls
-			self.notes._obj_cls = FindingIssueNote
 			first_note = None
 			has_technical_description = False
-			for note in self.notes.list(
+			for raw_note in self._issue.notes.list(
 				sort="asc",
 				order_by="created_at",
 				iterator=True
 			):
-				if note.system is True:
+				if raw_note.system is True:
 					continue
+				note = FindingIssueNote(raw_note)
 				if first_note is None:
 					first_note = note
 				if note.keyword == "technicaldescription":
 					has_technical_description = True
 				self._pentext_notes.append(note)
-			self.notes._obj_cls = _obj_cls
 			if not has_technical_description and (first_note.keyword is None):
 				first_note.keyword = "technicaldescription"
 		return self._pentext_notes
@@ -924,8 +907,6 @@ class Finding(ProjectIssuePentextXMLFile):
 
 class NonFinding(ProjectIssuePentextXMLFile):
 
-	__module__ = "gitlab.v4.objects.issues"
-
 	@property
 	def doc(self):
 		doc = xml.dom.minidom.Document()
@@ -1093,15 +1074,17 @@ class FutureWork(PentextXMLFileTodoSection):
 	todo_element_wrapper = "li" # <li><todo/></li>
 
 
-class SectionPart(gitlab.v4.objects.issues.ProjectIssue):
+class SectionPart:
 	"""
 	One single part of a PentextXMLFileSection represented by a GitLab Issue each.
 	"""
-	__module__ = "gitlab.v4.objects.issues"
 
-	def __init__(self, *args, pentext_project, **kwargs) -> None:
-		#self.pentext_project = pentext_project
-		super().__init__(*args, **kwargs)
+	def __init__(self, issue, pentext_project=None) -> None:
+		self._issue = issue
+		self.pentext_project = pentext_project
+
+	def __getattr__(self, name):
+		return getattr(self._issue, name)
 
 	@property
 	def identifier_slug(self):
@@ -1338,12 +1321,11 @@ class Report(PentextXMLFile):
 				labels_element.appendChild(self.doc.createTextNode("\n" + (_indent_character * (indent_level-1))))
 
 
-class PentextProject(gitlab.v4.objects.projects.Project):
+class PentextProject:
 
-	__module__ = "gitlab.v4.objects.projects"
-
-	def __init__(self, *args, **kwargs) -> None:
-		super().__init__(*args, **kwargs)
+	def __init__(self, project) -> None:
+		self.project = project
+		self.id = project.id
 		self.report = Report()
 
 	@property
@@ -1355,17 +1337,14 @@ class PentextProject(gitlab.v4.objects.projects.Project):
 		return self.get_report_assets(NonFinding, labels=["non-finding", *LABELS])
 
 	def get_report_assets(self, obj_cls, labels=LABELS, milestone=MILESTONE, **kwargs):
-		_obj_cls = self.issues._obj_cls
-		self.issues._obj_cls = curry_project_obj_cls(obj_cls, pentext_project=self)
-		for issue in self.issues.list(
+		for issue in self.project.issues.list(
 			state="opened",
 			milestone=milestone,
 			labels=labels,
 			**kwargs,
 			iterator=True
 		):
-			yield issue
-		self.issues._obj_cls = _obj_cls
+			yield obj_cls(issue, pentext_project=self)
 
 	@staticmethod
 	def __simplify(text: str) -> str:
@@ -1463,14 +1442,13 @@ class PentextProject(gitlab.v4.objects.projects.Project):
 		self.report.toggle_include_comments()
 
 		if options.include_labels is True:
-			self.report.update_labels(self.labels.list(iterator=True))
+			self.report.update_labels(self.project.labels.list(iterator=True))
 
 		self.report.write()
 		logging.info("ROS Project written")
 
 
-client.projects._obj_cls = PentextProject
-project = client.projects.get(os.environ["CI_PROJECT_ID"])
+project = PentextProject(client.projects.get(os.environ["CI_PROJECT_ID"]))
 
 def _resolve_internal_links(markdown_text: str) -> str:
 
