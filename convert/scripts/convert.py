@@ -1375,7 +1375,7 @@ class PentextProject:
 		}
 		issues = self.get_report_assets(
 			SectionPart,
-			labels=[],
+			#labels=[],
 			milestone=None,
 			**kwargs
 		)
@@ -1392,9 +1392,17 @@ class PentextProject:
 		return obj_cls(*parts, pentext_project=self)
 
 	def get_report_section_parts_by_labels(self, labels):
-		for issue in self.get_report_assets(SectionPart, labels=labels, milestone=None):
-			if self._match_milestone_and_labels(issue):
-				yield issue
+		issues = self.get_report_assets(
+			SectionPart,
+			#labels=labels,
+			milestone=None
+		)
+		for issue in issues:
+			if not self._match_milestone_and_labels(issue):
+				continue
+			if not self._match_labels(issue.labels, [labels]):
+				continue
+			yield issue
 
 	def get_report_section_by_labels(self, labels, obj_cls):
 		parts = [*self.get_report_section_parts_by_labels(labels)]
