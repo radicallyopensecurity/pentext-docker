@@ -225,7 +225,7 @@ def to_prettyxml(doc):
 p_pre_code_open = re.compile(r"<pre>[\s\r\n]*<code>[\s\r\n]*", re.MULTILINE)
 p_pre_code_close = re.compile(r"[\s\r\n]*</code>[\s\r\n]*</pre>", re.MULTILINE)
 p_syntax_highlighting = re.compile(r"^```(.+)$", re.MULTILINE)
-p_hidden_links = re.compile(r'<a href="#gitlab[^>]*" aria-hidden="true"></a>', re.MULTILINE)
+p_hidden_links = re.compile(r'(<a href="#gitlab[^>"]*" aria-hidden="true"></a>|<a href="#[^"]+" aria-hidden="true" tabindex="-1"/>)', re.MULTILINE)
 
 def _fix_code_blocks(html: str) -> str:
 	html = re.sub(p_pre_code_open, "<pre><code>", html)
