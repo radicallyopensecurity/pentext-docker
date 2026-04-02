@@ -1,0 +1,62 @@
+name: Pull Request
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quickscope:
+    name: Quickscope
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.test.outputs.result }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Build quickscope
+        working-directory: quickscope
+        run: docker build -t quickscope .
+
+      - name: Run integration test
+        id: test
+        working-directory: quickscope
+        run: |
+          result=$(./integration.sh | tee /dev/stderr | tail -n1)
+          echo "result=$result" >> $GITHUB_OUTPUT
+
+      - name: Upload diffs
+        if: ${{ steps.test.outputs.result == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickscope-diffs
+          path: |
+            ./quickscope/integration/current.diff
+            ./quickscope/integration/new.diff
+            ./quickscope/integration/integration.diff
+
+  comment:
+    name: Comment integration
+    needs: quickscope
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Post comment
+        env:
+          PR_C_REPO: ${{ github.repository }}
+          PR_C_NUMBER: ${{ github.event.pull_request.number }}
+          PR_C_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_QS_DIFF: ${{ needs.quickscope.outputs.result }}
+        run: .internal/ci/comment-integration.sh

@@ -2,3 +2,8 @@ KEYS
 env
 .env
 *.swp
+
+# integration tests
+new.diff
+integration.diff
+tmp/
